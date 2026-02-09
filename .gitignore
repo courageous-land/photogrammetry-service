@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.env
+
+# Node
+node_modules/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Pulumi
+.pulumi/
+*.bak
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Local data (for development)
+data/
+
+# Frontend config (contains API URL)
+frontend/config.js
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,4 @@
+config:
+  gcp:project: cl-operational
+  gcp:region: southamerica-east1
+  photogrammetry-service:environment: prod
