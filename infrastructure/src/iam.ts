@@ -66,6 +66,7 @@ export function configureIamPermissions(
     const workerPermissions = [
         "roles/storage.objectAdmin",       // Read/write storage
         "roles/datastore.user",            // Update Firestore
+        "roles/pubsub.publisher",          // Publish events
         "roles/logging.logWriter",         // Write logs
         "roles/batch.agentReporter",       // Report batch status
         "roles/artifactregistry.reader",   // Pull Docker images

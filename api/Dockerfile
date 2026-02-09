@@ -1,5 +1,5 @@
 # Dockerfile otimizado para Cloud Run
-FROM python:3.11-slim
+FROM python:3.11.11-slim
 
 WORKDIR /app
 
@@ -16,13 +16,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Cria usuário não-root
+RUN useradd -m -u 1000 appuser
+
 # Copia código
 COPY . .
+
+# Ajusta permissões
+RUN chown -R appuser:appuser /app
+
+# Executa como não-root
+USER appuser
 
 # Cloud Run usa a porta da variável PORT (padrão 8080)
 ENV PORT=8080
 EXPOSE 8080
 
 # Comando para Cloud Run
-# Cloud Run define PORT automaticamente
 CMD exec uvicorn main:app --host 0.0.0.0 --port $PORT

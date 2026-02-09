@@ -6,7 +6,7 @@ Handles project creation, file uploads, processing, and results.
 """
 from fastapi import APIRouter, HTTPException, Query, Request
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from models import (
     CreateProjectRequest,
@@ -20,7 +20,7 @@ from models import (
     ProjectStatus,
     ErrorResponse
 )
-from services import storage_service, processor_service
+from services import storage_service, processor_service, batch_service, pubsub_service
 
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
@@ -40,6 +40,9 @@ async def create_project(request: CreateProjectRequest):
         description=request.description,
         user_id=request.user_id
     )
+    
+    # Publish event
+    await pubsub_service.publish_project_created(project["project_id"], project)
     
     return CreateProjectResponse(
         project_id=project["project_id"],
@@ -82,14 +85,63 @@ async def list_projects(
     response_model=ProjectStatusResponse,
     responses={404: {"model": ErrorResponse}},
     summary="Get project status",
-    description="Returns the current status of a project. Use for polling during processing."
+    description="Returns the current status of a project. Use for polling during processing. Automatically checks Cloud Batch job status if project is processing."
 )
 async def get_project_status(project_id: str):
-    """Get project status."""
+    """Get project status. If processing, check Cloud Batch job status."""
     project = await storage_service.get_project(project_id)
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
+    # If project is processing, check Cloud Batch job status
+    if project.get("status") == ProjectStatus.PROCESSING.value:
+        batch_job = project.get("batch_job")
+        if batch_job and batch_job.get("job_name"):
+            try:
+                job_status = await batch_service.get_job_status(batch_job["job_name"])
+                batch_status = job_status.get("status", "").upper()
+                
+                # Map Cloud Batch status to project status
+                # Cloud Batch states: STATE_UNSPECIFIED, QUEUED, SCHEDULED, RUNNING, SUCCEEDED, FAILED, DELETION_IN_PROGRESS
+                if batch_status == "FAILED":
+                    # Job failed - update project status
+                    error_msg = "Job failed in Cloud Batch"
+                    status_events = job_status.get("status_events", [])
+                    if status_events:
+                        last_event = status_events[-1]
+                        error_msg = last_event.get("description", error_msg)
+                    
+                    await storage_service.update_project(project_id, {
+                        "status": ProjectStatus.FAILED.value,
+                        "error_message": error_msg
+                    })
+                    # Reload project to get updated status
+                    project = await storage_service.get_project(project_id)
+                    
+                elif batch_status in ["QUEUED", "SCHEDULED"]:
+                    # Job is queued but not running yet - keep processing status
+                    # But if it's been queued for too long (>30 min), mark as failed
+                    try:
+                        updated_at_str = project.get("updated_at")
+                        if updated_at_str:
+                            updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
+                            now = datetime.now(updated_at.tzinfo) if updated_at.tzinfo else datetime.now()
+                            if (now - updated_at).total_seconds() > 30 * 60:  # 30 minutes
+                                await storage_service.update_project(project_id, {
+                                    "status": ProjectStatus.FAILED.value,
+                                    "error_message": "Job queued for too long. Check Cloud Batch permissions and quotas."
+                                })
+                                project = await storage_service.get_project(project_id)
+                    except Exception:
+                        # If date parsing fails, skip timeout check
+                        pass
+                        
+            except Exception as e:
+                # If we can't check job status, log but don't fail the request
+                # The project status will remain as-is
+                import logging
+                logging.warning(f"Failed to check Cloud Batch job status for {project_id}: {e}")
     
     return ProjectStatusResponse(
         project_id=project["project_id"],
@@ -206,7 +258,7 @@ async def start_processing(project_id: str, request: ProcessRequest = None):
     
     result = await processor_service.start_processing(
         project_id=project_id,
-        options=request.options
+        options=request.options.model_dump() if request.options else None
     )
     
     if not result["success"]:
@@ -215,6 +267,10 @@ async def start_processing(project_id: str, request: ProcessRequest = None):
         raise HTTPException(status_code=400, detail=result["error"])
     
     project = await storage_service.get_project(project_id)
+    
+    # Publish event
+    if result.get("job_info"):
+        await pubsub_service.publish_project_processing_started(project_id, result["job_info"])
     
     return ProcessResponse(
         project_id=project_id,

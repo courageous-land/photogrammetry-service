@@ -36,6 +36,7 @@ const enabledApis = [
     "cloudbuild.googleapis.com",
     "batch.googleapis.com",
     "compute.googleapis.com",
+    "pubsub.googleapis.com",
 ].map((api) =>
     new gcp.projects.Service(`enable-${api.split(".")[0]}`, {
         project,
@@ -67,6 +68,16 @@ const artifactRegistry = new gcp.artifactregistry.Repository(`${serviceName}-rep
 
 const artifactRegistryUrl = pulumi.interpolate`${region}-docker.pkg.dev/${project}/${artifactRegistry.repositoryId}`;
 
+// Pub/Sub Topics (use existing topics if they exist, or create)
+// Note: photogrammetry-status and photogrammetry-jobs may already exist
+const pubsubStatusTopic = new gcp.pubsub.Topic(`${serviceName}-status`, {
+    name: "photogrammetry-status",
+    labels: {
+        service: serviceName,
+        environment,
+    },
+}, { dependsOn: enabledApis });
+
 // Service Accounts
 const serviceAccounts = createServiceAccounts({ project, serviceName });
 configureIamPermissions({ project, serviceName }, serviceAccounts);
@@ -84,7 +95,7 @@ const cloudRun = createCloudRunService(
         artifactRegistryUrl,
         environment,
     },
-    enabledApis
+    [...enabledApis, pubsubStatusTopic]
 );
 
 // Exports
@@ -102,6 +113,9 @@ export const outputs = {
     
     // Cloud Run
     apiUrl: cloudRun.url,
+    
+    // Pub/Sub
+    pubsubStatusTopicName: pubsubStatusTopic.name,
     
     // Configuration
     project,

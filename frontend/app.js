@@ -183,6 +183,12 @@ class PhotogrammetryApp {
                     <button class="btn" style="margin-top:12px" onclick="app.openProject('${p.project_id}')">Atualizar</button>
                 </div>
             `;
+            // Auto-refresh every 5 seconds when processing
+            setTimeout(() => {
+                if (document.getElementById('modal') && !document.getElementById('modal').classList.contains('hidden')) {
+                    this.openProject(p.project_id);
+                }
+            }, 5000);
         }
 
         // Results - buscar resultados separadamente
@@ -214,12 +220,15 @@ class PhotogrammetryApp {
             if (result.download_urls && result.download_urls.length > 0) {
                 container.innerHTML = `
                     <div class="results-list">
-                        ${result.download_urls.map((url, i) => `
+                        ${result.download_urls.map((url, i) => {
+                            // Sanitize URL - only allow https:// URLs
+                            const safeUrl = (url && url.startsWith('https://')) ? url : '#';
+                            return `
                             <div class="result-item">
                                 <span>Arquivo ${i + 1}</span>
-                                <a href="${url}" target="_blank">Download</a>
-                            </div>
-                        `).join('')}
+                                <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">Download</a>
+                            </div>`;
+                        }).join('')}
                     </div>
                 `;
             } else {

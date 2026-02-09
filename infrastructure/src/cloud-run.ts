@@ -60,6 +60,7 @@ export function createCloudRunService(
                             value: pulumi.interpolate`${artifactRegistryUrl}/worker:latest` 
                         },
                         { name: "WORKER_SERVICE_ACCOUNT", value: workerServiceAccountEmail },
+                        { name: "PUBSUB_TOPIC", value: "photogrammetry-status" },
                     ],
                     resources: {
                         limits: {

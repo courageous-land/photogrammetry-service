@@ -7,11 +7,13 @@ Services handle communication with GCP resources (Cloud Storage, Firestore, Clou
 from services.storage import StorageService
 from services.batch import BatchService
 from services.processor import ProcessorService
+from services.pubsub import PubSubService
 
 
 # Initialize services
 storage_service = StorageService()
 batch_service = BatchService()
+pubsub_service = PubSubService()
 processor_service = ProcessorService(
     storage_service=storage_service,
     batch_service=batch_service
@@ -19,9 +21,11 @@ processor_service = ProcessorService(
 
 __all__ = [
     "storage_service",
-    "batch_service", 
+    "batch_service",
+    "pubsub_service",
     "processor_service",
     "StorageService",
     "BatchService",
+    "PubSubService",
     "ProcessorService",
 ]

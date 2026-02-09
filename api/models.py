@@ -41,8 +41,14 @@ class UploadUrlResponse(BaseModel):
     expires_in: int = 3600
 
 
+class ProcessingOptions(BaseModel):
+    ortho_quality: Optional[str] = Field("medium", pattern="^(low|medium|high)$", description="Qualidade: low, medium, high")
+    generate_dtm: Optional[bool] = Field(False, description="Gerar modelo digital de terreno")
+    multispectral: Optional[bool] = Field(False, description="Processamento multiespectral")
+
+
 class ProcessRequest(BaseModel):
-    options: Optional[dict] = None
+    options: Optional[ProcessingOptions] = None
 
 
 class ProcessResponse(BaseModel):

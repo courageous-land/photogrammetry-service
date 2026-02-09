@@ -19,6 +19,8 @@ from typing import List, Dict, Any, Optional
 
 from google.cloud import storage
 from google.cloud import firestore
+from google.cloud import pubsub_v1
+import json
 
 
 # Logging configuration
@@ -129,10 +131,31 @@ class PhotogrammetryWorker:
         self.outputs_bucket = self.storage_client.bucket(config.outputs_bucket)
         self.projects_collection = self.firestore_client.collection("projects")
         
+        # Pub/Sub publisher - use existing photogrammetry-status topic
+        self.pubsub_publisher = pubsub_v1.PublisherClient()
+        self.pubsub_topic_name = os.environ.get("PUBSUB_TOPIC", "photogrammetry-status")
+        self.pubsub_topic_path = self.pubsub_publisher.topic_path(config.gcp_project, self.pubsub_topic_name)
+        
         logger.info("Worker initialized")
         logger.info(f"  GCP Project: {config.gcp_project}")
         logger.info(f"  Uploads bucket: {config.uploads_bucket}")
         logger.info(f"  Outputs bucket: {config.outputs_bucket}")
+    
+    def publish_event(self, event_type: str, project_id: str, data: Dict[str, Any]) -> None:
+        """Publish event to Pub/Sub."""
+        try:
+            message_data = {
+                "event_type": event_type,
+                "project_id": project_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "data": data
+            }
+            message_bytes = json.dumps(message_data).encode("utf-8")
+            future = self.pubsub_publisher.publish(self.pubsub_topic_path, message_bytes)
+            future.result()  # Wait for publish
+            logger.info(f"Published event: {event_type} for project {project_id}")
+        except Exception as e:
+            logger.warning(f"Failed to publish Pub/Sub event: {e}")
     
     def update_status(
         self,
@@ -143,20 +166,25 @@ class PhotogrammetryWorker:
         outputs: Optional[List[Dict]] = None
     ) -> None:
         """Update project status in Firestore."""
-        updates: Dict[str, Any] = {
-            "status": status,
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        if progress is not None:
-            updates["progress"] = progress
-        if error:
-            updates["error_message"] = error
-        if outputs:
-            updates["outputs"] = outputs
-        
-        self.projects_collection.document(project_id).update(updates)
-        logger.info(f"Status updated: {status}" + (f" ({progress}%)" if progress else ""))
+        try:
+            updates: Dict[str, Any] = {
+                "status": status,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+            if progress is not None:
+                updates["progress"] = progress
+            if error:
+                updates["error_message"] = error
+            if outputs:
+                updates["outputs"] = outputs
+            
+            doc_ref = self.projects_collection.document(project_id)
+            doc_ref.update(updates)
+            logger.info(f"Status updated: {status}" + (f" ({progress}%)" if progress else ""))
+        except Exception as e:
+            logger.error(f"Failed to update Firestore status for {project_id}: {e}")
+            # Don't raise - continue processing even if status update fails
     
     def download_images(self, project_id: str) -> List[Path]:
         """Download images from Cloud Storage."""
@@ -335,6 +363,19 @@ class PhotogrammetryWorker:
             logger.info("Step 4/4: Finalizing...")
             self.update_status(project_id, "completed", progress=100, outputs=outputs)
             
+            # Publish completion event
+            self.publish_event("project.completed", project_id, {
+                "outputs_count": len(outputs),
+                "outputs": [
+                    {
+                        "type": o.get("type"),
+                        "filename": o.get("filename"),
+                        "size_mb": o.get("size_mb")
+                    }
+                    for o in outputs
+                ]
+            })
+            
             logger.info("=" * 60)
             logger.info(f"Processing completed successfully")
             logger.info(f"Outputs: {len(outputs)} files")
@@ -345,6 +386,10 @@ class PhotogrammetryWorker:
         except Exception as e:
             logger.error(f"Processing failed: {e}")
             self.update_status(project_id, "failed", error=str(e))
+            
+            # Publish failure event
+            self.publish_event("project.failed", project_id, {"error": str(e)})
+            
             return False
             
         finally:

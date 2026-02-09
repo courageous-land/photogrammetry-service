@@ -102,8 +102,6 @@ async def health():
     """Detailed health check."""
     return {
         "status": "healthy",
-        "gcp_project": os.environ.get("GCP_PROJECT"),
-        "region": os.environ.get("GCP_REGION"),
         "components": {
             "api": "up",
             "storage": "up",

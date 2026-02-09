@@ -174,6 +174,7 @@ class BatchService:
                     "GCP_PROJECT": self.project_id,
                     "UPLOADS_BUCKET": f"{self.project_id}-photogrammetry-uploads",
                     "OUTPUTS_BUCKET": f"{self.project_id}-photogrammetry-outputs",
+                    "PUBSUB_TOPIC": "photogrammetry-status",
                     "ORTHO_QUALITY": ortho_quality,
                     "GENERATE_DTM": "true" if generate_dtm else "false",
                     "MULTISPECTRAL": "true" if multispectral else "false",

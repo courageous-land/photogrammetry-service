@@ -6,6 +6,7 @@ Handles all storage operations:
 - Firestore: Project metadata and status tracking
 """
 import os
+import re
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
@@ -16,6 +17,43 @@ from google.cloud import storage
 from google.cloud import firestore
 
 from models import ProjectStatus
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename to prevent path traversal and injection attacks.
+    
+    - Removes path components (../, .\\, absolute paths)
+    - Keeps only the basename
+    - Removes null bytes and control characters
+    - Restricts to safe characters (alphanumeric, dash, underscore, dot)
+    - Limits length to 255 characters
+    """
+    # Remove null bytes
+    filename = filename.replace("\x00", "")
+    
+    # Extract only the basename (removes any path components like ../ or C:\)
+    filename = os.path.basename(filename)
+    
+    # Remove any remaining path traversal patterns
+    filename = filename.replace("..", "")
+    
+    # Keep only safe characters: letters, numbers, dash, underscore, dot, space
+    filename = re.sub(r'[^\w\-. ]', '_', filename)
+    
+    # Remove leading/trailing dots and spaces (prevents hidden files)
+    filename = filename.strip('. ')
+    
+    # Limit length
+    if len(filename) > 255:
+        name, ext = os.path.splitext(filename)
+        filename = name[:255 - len(ext)] + ext
+    
+    # Fallback if empty after sanitization
+    if not filename:
+        filename = "unnamed_file"
+    
+    return filename
 
 
 class StorageService:
@@ -165,7 +203,8 @@ class StorageService:
             return None
         
         file_id = str(uuid4())
-        safe_filename = f"{file_id}_{filename}"
+        clean_filename = sanitize_filename(filename)
+        safe_filename = f"{file_id}_{clean_filename}"
         blob_path = f"{project_id}/{safe_filename}"
         
         blob = self.uploads_bucket.blob(blob_path)
@@ -186,7 +225,7 @@ class StorageService:
             # Simple signed URL - OK for small files (<50MB)
             upload_url = blob.generate_signed_url(
                 version="v4",
-                expiration=timedelta(hours=1),
+                expiration=timedelta(minutes=15),
                 method="PUT",
                 content_type=content_type,
                 service_account_email=self.service_account_email,
@@ -277,7 +316,7 @@ class StorageService:
         
         return blob.generate_signed_url(
             version="v4",
-            expiration=timedelta(hours=1),
+            expiration=timedelta(minutes=15),
             method="GET",
             service_account_email=self.service_account_email,
             access_token=self._get_access_token()
