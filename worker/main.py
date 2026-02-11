@@ -14,9 +14,9 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from google.cloud import firestore, pubsub_v1, storage
 
@@ -138,13 +138,13 @@ class PhotogrammetryWorker:
         logger.info(f"  Uploads bucket: {config.uploads_bucket}")
         logger.info(f"  Outputs bucket: {config.outputs_bucket}")
 
-    def publish_event(self, event_type: str, project_id: str, data: dict[str, Any]) -> None:
+    def publish_event(self, event_type: str, project_id: str, data: Dict[str, Any]) -> None:
         """Publish event to Pub/Sub."""
         try:
             message_data = {
                 "event_type": event_type,
                 "project_id": project_id,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "data": data
             }
             message_bytes = json.dumps(message_data).encode("utf-8")
@@ -158,15 +158,15 @@ class PhotogrammetryWorker:
         self,
         project_id: str,
         status: str,
-        progress: int | None = None,
-        error: str | None = None,
-        outputs: list[dict] | None = None
+        progress: Optional[int] = None,
+        error: Optional[str] = None,
+        outputs: Optional[List[Dict]] = None,
     ) -> None:
         """Update project status in Firestore."""
         try:
-            updates: dict[str, Any] = {
+            updates: Dict[str, Any] = {
                 "status": status,
-                "updated_at": datetime.now(UTC).isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat()
             }
 
             if progress is not None:
@@ -183,7 +183,7 @@ class PhotogrammetryWorker:
             logger.error(f"Failed to update Firestore status for {project_id}: {e}")
             # Don't raise - continue processing even if status update fails
 
-    def download_images(self, project_id: str) -> list[Path]:
+    def download_images(self, project_id: str) -> List[Path]:
         """Download images from Cloud Storage."""
         self.images_dir.mkdir(parents=True, exist_ok=True)
 
@@ -191,7 +191,7 @@ class PhotogrammetryWorker:
         blobs = list(self.uploads_bucket.list_blobs(prefix=prefix))
         logger.info(f"Found {len(blobs)} files in storage")
 
-        downloaded: list[Path] = []
+        downloaded: List[Path] = []
         for i, blob in enumerate(blobs):
             filename = blob.name.replace(prefix, "")
             extension = Path(filename).suffix.lower()
@@ -209,7 +209,7 @@ class PhotogrammetryWorker:
         logger.info(f"Download complete: {len(downloaded)} images")
         return downloaded
 
-    def build_odm_command(self) -> list[str]:
+    def build_odm_command(self) -> List[str]:
         """Build ODM command with appropriate settings."""
         settings = ODMSettings.from_quality(self.config.ortho_quality)
 
@@ -278,9 +278,9 @@ class PhotogrammetryWorker:
         if process.returncode != 0:
             raise RuntimeError(f"ODM failed with exit code {process.returncode}")
 
-    def upload_results(self, project_id: str) -> list[dict[str, Any]]:
+    def upload_results(self, project_id: str) -> List[Dict[str, Any]]:
         """Upload processing results to Cloud Storage."""
-        outputs: list[dict[str, Any]] = []
+        outputs: List[Dict[str, Any]] = []
 
         for src_path, dest_name, output_type in self.OUTPUT_FILES:
             local_path = self.project_dir / src_path
@@ -303,7 +303,7 @@ class PhotogrammetryWorker:
                 "filename": dest_name,
                 "size_mb": size_mb,
                 "gcs_path": f"gs://{self.config.outputs_bucket}/{blob_path}",
-                "created_at": datetime.now(UTC).isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat()
             })
 
             logger.info(f"Uploaded {dest_name} ({size_mb} MB)")

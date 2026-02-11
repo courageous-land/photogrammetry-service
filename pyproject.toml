@@ -30,6 +30,10 @@ ignore = [
     "RET504", # unnecessary assignment before return
 ]
 
+# Worker runs on Python 3.9 (ODM image) — disable modernization rules
+[tool.ruff.lint.per-file-ignores]
+"worker/**" = ["UP006", "UP007", "UP017", "UP035"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["models", "routers", "services"]
 
