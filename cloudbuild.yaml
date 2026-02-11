@@ -7,6 +7,21 @@ substitutions:
   _REPO: photogrammetry
 
 steps:
+  # Lint + Test (runs before any build)
+  - id: 'lint-and-test'
+    name: 'python:3.11-slim'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --quiet -r requirements-dev.txt
+        echo "=== Ruff lint ==="
+        ruff check api/ tests/
+        echo "=== Ruff format check ==="
+        ruff format --check api/ tests/
+        echo "=== Pytest ==="
+        pytest tests/ -v --tb=short
+
   # Get version from git tag or commit SHA
   - id: 'set-version'
     name: 'gcr.io/cloud-builders/git'
@@ -32,7 +47,7 @@ steps:
       - '-t'
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:latest'
       - '.'
-    waitFor: ['set-version']
+    waitFor: ['set-version', 'lint-and-test']
 
   # Build Worker image
   - id: 'build-worker'
@@ -45,7 +60,7 @@ steps:
       - '-t'
       - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/worker:latest'
       - '.'
-    waitFor: ['set-version']
+    waitFor: ['set-version', 'lint-and-test']
 
   # Push API image
   - id: 'push-api'

@@ -4,11 +4,10 @@ Photogrammetry Service - Services Layer
 This module initializes all services required for the photogrammetry processing API.
 Services handle communication with GCP resources (Cloud Storage, Firestore, Cloud Batch).
 """
-from services.storage import StorageService
 from services.batch import BatchService
 from services.processor import ProcessorService
 from services.pubsub import PubSubService
-
+from services.storage import StorageService
 
 # Initialize services
 storage_service = StorageService()

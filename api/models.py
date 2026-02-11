@@ -1,7 +1,7 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+
+from pydantic import BaseModel, Field
 
 
 class ProjectStatus(str, Enum):
@@ -15,8 +15,8 @@ class ProjectStatus(str, Enum):
 
 class CreateProjectRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
-    user_id: Optional[str] = None
+    description: str | None = None
+    user_id: str | None = None
 
 
 class CreateProjectResponse(BaseModel):
@@ -28,27 +28,27 @@ class CreateProjectResponse(BaseModel):
 
 class UploadUrlRequest(BaseModel):
     filename: str = Field(..., min_length=1)
-    file_size: Optional[int] = Field(None, description="Tamanho do arquivo em bytes (necessário para resumable)")
-    content_type: Optional[str] = Field("image/jpeg", description="Tipo MIME do arquivo")
-    resumable: Optional[bool] = Field(True, description="Usar upload resumable (recomendado para arquivos > 5MB)")
+    file_size: int | None = Field(None, description="Tamanho do arquivo em bytes (necessário para resumable)")
+    content_type: str | None = Field("image/jpeg", description="Tipo MIME do arquivo")
+    resumable: bool | None = Field(True, description="Usar upload resumable (recomendado para arquivos > 5MB)")
 
 
 class UploadUrlResponse(BaseModel):
     upload_url: str
     file_id: str
     upload_type: str = Field("resumable", description="Tipo: 'resumable' ou 'simple'")
-    chunk_size: Optional[int] = Field(None, description="Tamanho recomendado de cada chunk em bytes")
+    chunk_size: int | None = Field(None, description="Tamanho recomendado de cada chunk em bytes")
     expires_in: int = 3600
 
 
 class ProcessingOptions(BaseModel):
-    ortho_quality: Optional[str] = Field("medium", pattern="^(low|medium|high)$", description="Qualidade: low, medium, high")
-    generate_dtm: Optional[bool] = Field(False, description="Gerar modelo digital de terreno")
-    multispectral: Optional[bool] = Field(False, description="Processamento multiespectral")
+    ortho_quality: str | None = Field("medium", pattern="^(low|medium|high)$", description="Qualidade: low, medium, high")
+    generate_dtm: bool | None = Field(False, description="Gerar modelo digital de terreno")
+    multispectral: bool | None = Field(False, description="Processamento multiespectral")
 
 
 class ProcessRequest(BaseModel):
-    options: Optional[ProcessingOptions] = None
+    options: ProcessingOptions | None = None
 
 
 class ProcessResponse(BaseModel):
@@ -65,16 +65,16 @@ class ProjectStatusResponse(BaseModel):
     files_count: int = 0
     created_at: datetime
     updated_at: datetime
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 class ProjectResultResponse(BaseModel):
     project_id: str
     status: ProjectStatus
-    outputs: List[dict] = []
-    download_urls: List[str] = []
+    outputs: list[dict] = []
+    download_urls: list[str] = []
 
 
 class ErrorResponse(BaseModel):
     error: str
-    detail: Optional[str] = None
+    detail: str | None = None

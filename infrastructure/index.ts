@@ -17,6 +17,8 @@ import * as gcp from "@pulumi/gcp";
 import { createStorage } from "./src/storage";
 import { createServiceAccounts, configureIamPermissions } from "./src/iam";
 import { createCloudRunService } from "./src/cloud-run";
+import { loadRuntimeInfraConfig } from "./src/config";
+import { createOperationalMonitoring } from "./src/monitoring";
 
 // Configuration
 const config = new pulumi.Config();
@@ -26,6 +28,7 @@ const project = gcpConfig.require("project");
 const region = gcpConfig.require("region");
 const environment = config.get("environment") || "dev";
 const serviceName = "photogrammetry";
+const runtimeInfra = loadRuntimeInfraConfig(config);
 
 // Enable required APIs
 const enabledApis = [
@@ -37,6 +40,7 @@ const enabledApis = [
     "batch.googleapis.com",
     "compute.googleapis.com",
     "pubsub.googleapis.com",
+    "monitoring.googleapis.com",
 ].map((api) =>
     new gcp.projects.Service(`enable-${api.split(".")[0]}`, {
         project,
@@ -94,9 +98,32 @@ const cloudRun = createCloudRunService(
         outputsBucketName: storage.outputsBucket.name,
         artifactRegistryUrl,
         environment,
+        allowedOrigins: runtimeInfra.allowedOrigins,
+        batchAllowedZones: runtimeInfra.batchAllowedZones,
+        batchMaxRunDuration: runtimeInfra.batchMaxRunDuration,
+        batchMaxRetryCount: runtimeInfra.batchMaxRetryCount,
+        batchProvisioningModel: runtimeInfra.batchProvisioningModel,
+        batchMachineTiers: JSON.stringify(runtimeInfra.batchMachineTiers),
+        batchMinBootDiskMb: runtimeInfra.batchMinBootDiskMb,
+        batchDiskSafetyMargin: runtimeInfra.batchDiskSafetyMargin,
+        batchAvgImageSizeMb: runtimeInfra.batchAvgImageSizeMb,
+        batchWorkerCommand: runtimeInfra.batchWorkerCommand,
+        batchLogDestination: runtimeInfra.batchLogDestination,
+        apiMinScale: runtimeInfra.apiMinScale,
+        apiMaxScale: runtimeInfra.apiMaxScale,
+        cloudRunPublicAccess: runtimeInfra.cloudRunPublicAccess,
     },
     [...enabledApis, pubsubStatusTopic]
 );
+
+createOperationalMonitoring({
+    project,
+    region,
+    serviceName,
+    enableOperationalAlerts: runtimeInfra.enableOperationalAlerts,
+    alertNotificationEmail: runtimeInfra.alertNotificationEmail,
+    pubsubBacklogSubscriptions: runtimeInfra.pubsubBacklogSubscriptions,
+});
 
 // Exports
 export const outputs = {
@@ -121,6 +148,13 @@ export const outputs = {
     project,
     region,
     environment,
+    cloudRunPublicAccess: runtimeInfra.cloudRunPublicAccess,
+    apiMinScale: runtimeInfra.apiMinScale,
+    apiMaxScale: runtimeInfra.apiMaxScale,
+    batchAllowedZones: runtimeInfra.batchAllowedZones,
+    batchMaxRunDuration: runtimeInfra.batchMaxRunDuration,
+    batchMaxRetryCount: runtimeInfra.batchMaxRetryCount,
+    batchProvisioningModel: runtimeInfra.batchProvisioningModel,
 };
 
 // Individual exports for easy access

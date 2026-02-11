@@ -9,26 +9,49 @@ Architecture:
 - Firestore: Project metadata and status
 - Cloud Batch: Processing jobs with OpenDroneMap
 """
+import logging
 import os
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from routers import projects
+
+logger = logging.getLogger(__name__)
+
+
+def load_allowed_origins() -> list[str]:
+    """Load CORS origins from infrastructure-managed environment variable."""
+    raw_origins = os.environ.get("ALLOWED_ORIGINS")
+    if not raw_origins:
+        raise ValueError(
+            "ALLOWED_ORIGINS environment variable is required. "
+            "Set it via Pulumi Cloud Run configuration."
+        )
+
+    origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    if not origins:
+        raise ValueError("ALLOWED_ORIGINS must contain at least one origin.")
+
+    if "*" in origins and len(origins) > 1:
+        raise ValueError("ALLOWED_ORIGINS cannot mix '*' with specific origins.")
+
+    return origins
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle management."""
     # Startup
-    print("=" * 60)
-    print("Photogrammetry Service API - Starting")
-    print(f"GCP Project: {os.environ.get('GCP_PROJECT', 'not set')}")
-    print(f"Region: {os.environ.get('GCP_REGION', 'not set')}")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Photogrammetry Service API - Starting")
+    logger.info("GCP Project: %s", os.environ.get("GCP_PROJECT", "not set"))
+    logger.info("Region: %s", os.environ.get("GCP_REGION", "not set"))
+    logger.info("=" * 60)
     yield
     # Shutdown
-    print("Photogrammetry Service API - Shutting down")
+    logger.info("Photogrammetry Service API - Shutting down")
 
 
 app = FastAPI(
@@ -36,7 +59,7 @@ app = FastAPI(
     description="""
 ## Overview
 
-REST API for photogrammetry processing. Transforms aerial images into orthophotos, 
+REST API for photogrammetry processing. Transforms aerial images into orthophotos,
 digital surface models (DSM), digital terrain models (DTM), and point clouds.
 
 ## Workflow
@@ -72,13 +95,14 @@ digital surface models (DSM), digital terrain models (DTM), and point clouds.
     lifespan=lifespan
 )
 
-# CORS - configure allowed origins for production
-allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+# CORS configuration is controlled by Pulumi stacks
+allowed_origins = load_allowed_origins()
+allow_credentials = "*" not in allowed_origins
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -99,12 +123,29 @@ async def root():
 
 @app.get("/health", tags=["Health"])
 async def health():
-    """Detailed health check."""
+    """Detailed health check — verifies connectivity to backend services."""
+    from services import storage_service
+
+    components: dict[str, str] = {"api": "up"}
+
+    # Firestore connectivity
+    try:
+        storage_service.firestore_client.collection("_health").limit(1).get()
+        components["firestore"] = "up"
+    except Exception as exc:
+        logger.warning("Health check: Firestore unreachable — %s", exc)
+        components["firestore"] = "down"
+
+    # Cloud Storage connectivity
+    try:
+        storage_service.uploads_bucket.exists()
+        components["storage"] = "up"
+    except Exception as exc:
+        logger.warning("Health check: Cloud Storage unreachable — %s", exc)
+        components["storage"] = "down"
+
+    all_up = all(v == "up" for v in components.values())
     return {
-        "status": "healthy",
-        "components": {
-            "api": "up",
-            "storage": "up",
-            "batch": "up"
-        }
+        "status": "healthy" if all_up else "degraded",
+        "components": components,
     }

@@ -63,6 +63,19 @@ photogrammetry-service/
 └── README.md
 ```
 
+## Responsibility Boundaries (Infra vs Runtime)
+
+| Layer | Ownership | Examples in this repository |
+|------|-----------|-----------------------------|
+| **Infrastructure (Pulumi)** | Persistent resources and environment contracts | Buckets, Firestore DB, Artifact Registry, IAM, Cloud Run service, operational alerts, stack configs |
+| **Runtime (API/Worker)** | Request-driven and ephemeral operations | Create Batch jobs per project, read/write Firestore documents, upload/download GCS objects, execute ODM |
+
+### Why this boundary matters
+
+- **Reproducibility**: new environments are created from Pulumi stack config.
+- **Scalability**: runtime only handles workload orchestration, not infrastructure mutation.
+- **Traceability**: infrastructure decisions are versioned in Pulumi files.
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -117,6 +130,20 @@ pulumi stack select dev  # or prod
 pulumi up
 ```
 
+## New Environment Checklist
+
+```bash
+cd infrastructure
+npm install
+pulumi stack init <new-stack>
+pulumi config set gcp:project <gcp-project-id>
+pulumi config set gcp:region southamerica-east1
+pulumi config set photogrammetry-service:environment <dev|prod>
+pulumi up
+```
+
+Then build and push API/worker images and run `pulumi up` again to roll latest image tags if needed.
+
 ### Build and Deploy API
 
 ```bash
@@ -127,9 +154,10 @@ gcloud builds submit --tag $REGION-docker.pkg.dev/$PROJECT/photogrammetry/api:la
 gcloud builds submit --tag $REGION-docker.pkg.dev/$PROJECT/photogrammetry/worker:latest ./worker
 ```
 
-### Environment Variables
+### Runtime Contract (Pulumi-owned)
 
-The API requires these environment variables (configured via Pulumi):
+In deployed environments, runtime configuration is owned by Pulumi stack config and injected into Cloud Run.
+The application contract is:
 
 | Variable | Description |
 |----------|-------------|
@@ -137,9 +165,45 @@ The API requires these environment variables (configured via Pulumi):
 | `GCP_REGION` | Region (e.g., `southamerica-east1`) |
 | `UPLOADS_BUCKET` | Cloud Storage bucket for uploads |
 | `OUTPUTS_BUCKET` | Cloud Storage bucket for outputs |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins (`*` or explicit domains) |
 | `SERVICE_ACCOUNT_EMAIL` | API service account email |
 | `WORKER_IMAGE` | Worker Docker image URL |
 | `WORKER_SERVICE_ACCOUNT` | Worker service account email |
+| `PUBSUB_TOPIC` | Topic used for status events |
+| `BATCH_ALLOWED_ZONES` | Comma-separated zones for Batch VM allocation |
+| `BATCH_MAX_RUN_DURATION` | Max job run duration (e.g., `43200s`) |
+| `BATCH_MAX_RETRY_COUNT` | Max retries per Batch task |
+| `BATCH_PROVISIONING_MODEL` | `STANDARD` or `SPOT` |
+
+### Platform integration mode
+
+To stay aligned with the `agroforestry-intelligence-platform` pattern:
+
+- Pulumi stack config + runtime environment are the primary source of truth.
+- Keep secrets and environment-specific values outside the repository.
+- Use `.env.example` only as local development convenience.
+- Do not use `.env.example` as production/deployment source.
+
+### Pulumi stack config contract
+
+`Pulumi.<stack>.yaml` should define operational settings for reproducible environments:
+
+- `allowedOrigins`
+- `batchAllowedZones`
+- `batchMaxRunDuration`
+- `batchMaxRetryCount`
+- `batchProvisioningModel`
+- `apiMinScale`
+- `apiMaxScale`
+- `cloudRunPublicAccess`
+- `enableOperationalAlerts`
+- `alertNotificationEmail` (optional)
+- `pubsubBacklogSubscriptions` (optional)
+
+### Local development (optional)
+
+For local API runs only, you may copy `.env.example` to `.env`.
+This is optional and should never be used as deployment/source-of-truth config.
 
 ## Integration Example
 

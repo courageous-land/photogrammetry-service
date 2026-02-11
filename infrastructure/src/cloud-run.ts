@@ -16,6 +16,20 @@ export interface CloudRunConfig {
     outputsBucketName: pulumi.Input<string>;
     artifactRegistryUrl: pulumi.Input<string>;
     environment: string;
+    allowedOrigins: string;
+    batchAllowedZones: string[];
+    batchMaxRunDuration: string;
+    batchMaxRetryCount: number;
+    batchProvisioningModel: "STANDARD" | "SPOT";
+    batchMachineTiers: string;
+    batchMinBootDiskMb: number;
+    batchDiskSafetyMargin: number;
+    batchAvgImageSizeMb: number;
+    batchWorkerCommand: string;
+    batchLogDestination: string;
+    apiMinScale: number;
+    apiMaxScale: number;
+    cloudRunPublicAccess: boolean;
 }
 
 export interface CloudRunResources {
@@ -37,6 +51,20 @@ export function createCloudRunService(
         outputsBucketName,
         artifactRegistryUrl,
         environment,
+        allowedOrigins,
+        batchAllowedZones,
+        batchMaxRunDuration,
+        batchMaxRetryCount,
+        batchProvisioningModel,
+        batchMachineTiers,
+        batchMinBootDiskMb,
+        batchDiskSafetyMargin,
+        batchAvgImageSizeMb,
+        batchWorkerCommand,
+        batchLogDestination,
+        apiMinScale,
+        apiMaxScale,
+        cloudRunPublicAccess,
     } = config;
 
     const service = new gcp.cloudrun.Service(`${serviceName}-api`, {
@@ -54,6 +82,7 @@ export function createCloudRunService(
                         { name: "UPLOADS_BUCKET", value: uploadsBucketName },
                         { name: "OUTPUTS_BUCKET", value: outputsBucketName },
                         { name: "ENVIRONMENT", value: environment },
+                        { name: "ALLOWED_ORIGINS", value: allowedOrigins },
                         { name: "SERVICE_ACCOUNT_EMAIL", value: apiServiceAccountEmail },
                         { 
                             name: "WORKER_IMAGE", 
@@ -61,6 +90,16 @@ export function createCloudRunService(
                         },
                         { name: "WORKER_SERVICE_ACCOUNT", value: workerServiceAccountEmail },
                         { name: "PUBSUB_TOPIC", value: "photogrammetry-status" },
+                        { name: "BATCH_ALLOWED_ZONES", value: batchAllowedZones.join(",") },
+                        { name: "BATCH_MAX_RUN_DURATION", value: batchMaxRunDuration },
+                        { name: "BATCH_MAX_RETRY_COUNT", value: String(batchMaxRetryCount) },
+                        { name: "BATCH_PROVISIONING_MODEL", value: batchProvisioningModel },
+                        { name: "BATCH_MACHINE_TIERS", value: batchMachineTiers },
+                        { name: "BATCH_MIN_BOOT_DISK_MB", value: String(batchMinBootDiskMb) },
+                        { name: "BATCH_DISK_SAFETY_MARGIN", value: String(batchDiskSafetyMargin) },
+                        { name: "BATCH_AVG_IMAGE_SIZE_MB", value: String(batchAvgImageSizeMb) },
+                        { name: "BATCH_WORKER_COMMAND", value: batchWorkerCommand },
+                        { name: "BATCH_LOG_DESTINATION", value: batchLogDestination },
                     ],
                     resources: {
                         limits: {
@@ -74,8 +113,8 @@ export function createCloudRunService(
             },
             metadata: {
                 annotations: {
-                    "autoscaling.knative.dev/minScale": environment === "prod" ? "1" : "0",
-                    "autoscaling.knative.dev/maxScale": "10",
+                    "autoscaling.knative.dev/minScale": String(apiMinScale),
+                    "autoscaling.knative.dev/maxScale": String(apiMaxScale),
                 },
             },
         },
@@ -85,13 +124,15 @@ export function createCloudRunService(
         }],
     }, { dependsOn });
 
-    // Allow public access (configure authentication as needed)
-    new gcp.cloudrun.IamMember(`${serviceName}-api-invoker`, {
-        service: service.name,
-        location: region,
-        role: "roles/run.invoker",
-        member: "allUsers",
-    });
+    if (cloudRunPublicAccess) {
+        // Allow public access (configure authentication as needed)
+        new gcp.cloudrun.IamMember(`${serviceName}-api-invoker`, {
+            service: service.name,
+            location: region,
+            role: "roles/run.invoker",
+            member: "allUsers",
+        });
+    }
 
     return {
         service,

@@ -1,14 +1,11 @@
 # FastAPI
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-pydantic==2.5.3
-python-multipart==0.0.6
-aiofiles==23.2.1
-python-dotenv==1.0.0
-uuid6==2024.1.12
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.10.0
+python-multipart==0.0.18
 
 # Google Cloud Platform
-google-cloud-storage==2.14.0
-google-cloud-firestore==2.14.0
-google-cloud-pubsub==2.19.0
-google-cloud-batch==0.17.0
+google-cloud-storage==2.19.0
+google-cloud-firestore==2.19.0
+google-cloud-pubsub==2.27.0
+google-cloud-batch==0.17.30
