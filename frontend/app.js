@@ -6,6 +6,8 @@ class PhotogrammetryApp {
     constructor() {
         this.apiUrl = window.PHOTOGRAMMETRY_CONFIG?.API_URL || '';
         this.projects = [];
+        this.isUploading = false;
+        this.isProcessing = false;
         
         this.init();
     }
@@ -25,9 +27,16 @@ class PhotogrammetryApp {
     }
 
     async api(method, path, body = null) {
-        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        const opts = {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+        };
         if (body) opts.body = JSON.stringify(body);
         const res = await fetch(`${this.apiUrl}${path}`, opts);
+        if (res.status === 401 || res.status === 403) {
+            throw new Error('Sessao expirada ou sem permissao. Faca login novamente.');
+        }
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Erro');
         return res.json();
     }
@@ -39,7 +48,7 @@ class PhotogrammetryApp {
             this.projects = Array.isArray(data) ? data : [];
             this.renderList();
         } catch (err) {
-            this.projectsList.innerHTML = `<p class="empty">Erro: ${err.message}</p>`;
+            this.projectsList.innerHTML = `<p class="empty">Erro: ${this.esc(err.message)}</p>`;
         }
     }
 
@@ -49,8 +58,12 @@ class PhotogrammetryApp {
             return;
         }
         
-        this.projectsList.innerHTML = this.projects.map(p => `
-            <div class="project-item" onclick="app.openProject('${p.project_id}')">
+        this.projectsList.innerHTML = this.projects.map(p => {
+            const safeId = this.safeProjectId(p.project_id);
+            const safeStatus = this.safeStatusClass(p.status);
+            const onclick = safeId ? ` onclick="app.openProject('${safeId}')"` : '';
+            return `
+            <div class="project-item"${onclick}>
                 <div class="project-info">
                     <div class="project-name">${this.esc(p.name || 'Sem nome')}</div>
                     <div class="project-meta">
@@ -59,9 +72,10 @@ class PhotogrammetryApp {
                         <span>${this.formatDate(p.created_at)}</span>
                     </div>
                 </div>
-                <span class="status status-${p.status}">${this.statusLabel(p.status)}</span>
+                <span class="status status-${safeStatus}">${this.statusLabel(safeStatus)}</span>
             </div>
-        `).join('');
+        `;
+        }).join('');
     }
 
     statusLabel(status) {
@@ -127,11 +141,17 @@ class PhotogrammetryApp {
     }
 
     showProjectModal(p) {
+        const safeId = this.safeProjectId(p.project_id);
         let html = `<div class="status-box info">
             <strong>Status:</strong> ${this.statusLabel(p.status)} | 
             <strong>Arquivos:</strong> ${p.files_count || 0} | 
             <strong>Progresso:</strong> ${p.progress || 0}%
         </div>`;
+        if (!safeId) {
+            html += `<div class="section"><div class="status-box error">ID de projeto invalido.</div></div>`;
+            this.openModal(p.name || 'Projeto', html);
+            return;
+        }
 
         // Upload
         if (['created', 'pending'].includes(p.status)) {
@@ -139,7 +159,7 @@ class PhotogrammetryApp {
                 <div class="section">
                     <div class="section-title">UPLOAD DE IMAGENS</div>
                     <input type="file" id="files" multiple accept=".jpg,.jpeg,.png,.tif,.tiff">
-                    <button class="btn" style="margin-top:12px" onclick="app.upload('${p.project_id}')">Enviar</button>
+                    <button class="btn" style="margin-top:12px" onclick="app.upload('${safeId}')">Enviar</button>
                     <div id="uploadMsg"></div>
                 </div>
             `;
@@ -167,7 +187,7 @@ class PhotogrammetryApp {
                                 <label class="checkbox-label"><input type="checkbox" id="optMulti"> Multiespectral</label>
                             </div>
                         </div>
-                        <button class="btn btn-primary" onclick="app.process('${p.project_id}')">Iniciar</button>
+                        <button class="btn btn-primary" onclick="app.process('${safeId}')">Iniciar</button>
                     ` : `<p style="color:#666">Envie ao menos 3 imagens.</p>`}
                 </div>
             `;
@@ -180,7 +200,7 @@ class PhotogrammetryApp {
                     <div class="section-title">PROCESSANDO</div>
                     <div class="progress-bar"><div class="progress-fill" style="width:${p.progress||0}%"></div></div>
                     <p style="font-size:13px;color:#666;margin-top:8px">${p.progress||0}% concluido</p>
-                    <button class="btn" style="margin-top:12px" onclick="app.openProject('${p.project_id}')">Atualizar</button>
+                    <button class="btn" style="margin-top:12px" onclick="app.openProject('${safeId}')">Atualizar</button>
                 </div>
             `;
             // Auto-refresh every 5 seconds when processing
@@ -222,7 +242,7 @@ class PhotogrammetryApp {
                     <div class="results-list">
                         ${result.download_urls.map((url, i) => {
                             // Sanitize URL - only allow https:// URLs
-                            const safeUrl = (url && url.startsWith('https://')) ? url : '#';
+                            const safeUrl = (url && /^https:\/\/storage\.googleapis\.com\//.test(url)) ? url : '#';
                             return `
                             <div class="result-item">
                                 <span>Arquivo ${i + 1}</span>
@@ -236,16 +256,29 @@ class PhotogrammetryApp {
             }
         } catch (err) {
             const container = document.getElementById('resultsContainer');
-            if (container) container.innerHTML = `<p style="color:#991b1b">Erro: ${err.message}</p>`;
+            if (container) container.innerHTML = `<p style="color:#991b1b">Erro: ${this.esc(err.message)}</p>`;
         }
     }
 
     async upload(id) {
+        if (this.isUploading) return;
         const files = Array.from(document.getElementById('files').files);
         const msg = document.getElementById('uploadMsg');
         if (!files.length) return alert('Selecione arquivos');
+        const maxBytes = 100 * 1024 * 1024; // 100MB por arquivo
+        const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/tiff', 'image/gif', 'image/webp']);
+        for (const file of files) {
+            const normalizedType = (file.type || 'application/octet-stream').toLowerCase();
+            if (!allowedTypes.has(normalizedType)) {
+                return alert(`Tipo de arquivo nao permitido: ${file.name}`);
+            }
+            if (file.size > maxBytes) {
+                return alert(`Arquivo muito grande (max 100MB): ${file.name}`);
+            }
+        }
         
         msg.innerHTML = '<div class="status-box info">Enviando...</div>';
+        this.isUploading = true;
         
         try {
             for (let i = 0; i < files.length; i++) {
@@ -276,11 +309,15 @@ class PhotogrammetryApp {
             
             setTimeout(() => this.openProject(id), 500);
         } catch (err) {
-            msg.innerHTML = `<div class="status-box error">Erro: ${err.message}</div>`;
+            msg.innerHTML = `<div class="status-box error">Erro: ${this.esc(err.message)}</div>`;
+        } finally {
+            this.isUploading = false;
         }
     }
 
     async process(id) {
+        if (this.isProcessing) return;
+        this.isProcessing = true;
         try {
             await this.api('POST', `/projects/${id}/process`, {
                 options: {
@@ -293,10 +330,20 @@ class PhotogrammetryApp {
             this.openProject(id);
         } catch (err) {
             alert('Erro: ' + err.message);
+        } finally {
+            this.isProcessing = false;
         }
     }
 
-    esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    safeProjectId(id) {
+        if (typeof id !== 'string') return '';
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : '';
+    }
+    safeStatusClass(status) {
+        const allowed = new Set(['created', 'pending', 'processing', 'completed', 'failed']);
+        return allowed.has(status) ? status : 'created';
+    }
+    esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
     formatDate(d) { return d ? new Date(d).toLocaleDateString('pt-BR') : '-'; }
 }
 

@@ -1,107 +1,35 @@
-# Cloud Build CI/CD Pipeline
-# Triggers on push to main branch
-# Builds and deploys API and Worker images
-
-substitutions:
-  _REGION: southamerica-east1
-  _REPO: photogrammetry
-
+# Cloud Build — Image build only (triggered by Cloud Build trigger or manually).
+# Deployment is handled by GitHub Actions + Pulumi.
 steps:
-  # Lint + Test (runs before any build)
-  - id: 'lint-and-test'
-    name: 'python:3.11-slim'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/docker"
     args:
-      - '-c'
-      - |
-        pip install --quiet -r requirements-dev.txt
-        echo "=== Ruff lint ==="
-        ruff check api/ tests/
-        echo "=== Ruff format check ==="
-        ruff format --check api/ tests/
-        echo "=== Pytest ==="
-        pytest tests/ -v --tb=short
+      - "build"
+      - "-t"
+      - "southamerica-east1-docker.pkg.dev/$PROJECT_ID/photogrammetry/api:$COMMIT_SHA"
+      - "./api"
 
-  # Get version from git tag or commit SHA
-  - id: 'set-version'
-    name: 'gcr.io/cloud-builders/git'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/docker"
     args:
-      - '-c'
-      - |
-        if [ -n "$TAG_NAME" ]; then
-          echo "$TAG_NAME" > /workspace/version.txt
-        else
-          echo "${SHORT_SHA}" > /workspace/version.txt
-        fi
-        echo "Version: $(cat /workspace/version.txt)"
+      - "push"
+      - "southamerica-east1-docker.pkg.dev/$PROJECT_ID/photogrammetry/api:$COMMIT_SHA"
 
-  # Build API image
-  - id: 'build-api'
-    name: 'gcr.io/cloud-builders/docker'
-    dir: 'api'
+  - name: "gcr.io/cloud-builders/docker"
     args:
-      - 'build'
-      - '-t'
-      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:${SHORT_SHA}'
-      - '-t'
-      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:latest'
-      - '.'
-    waitFor: ['set-version', 'lint-and-test']
+      - "build"
+      - "-t"
+      - "southamerica-east1-docker.pkg.dev/$PROJECT_ID/photogrammetry/worker:$COMMIT_SHA"
+      - "./worker"
 
-  # Build Worker image
-  - id: 'build-worker'
-    name: 'gcr.io/cloud-builders/docker'
-    dir: 'worker'
+  - name: "gcr.io/cloud-builders/docker"
     args:
-      - 'build'
-      - '-t'
-      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/worker:${SHORT_SHA}'
-      - '-t'
-      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/worker:latest'
-      - '.'
-    waitFor: ['set-version', 'lint-and-test']
-
-  # Push API image
-  - id: 'push-api'
-    name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - '--all-tags'
-      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api'
-    waitFor: ['build-api']
-
-  # Push Worker image
-  - id: 'push-worker'
-    name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - '--all-tags'
-      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/worker'
-    waitFor: ['build-worker']
-
-  # Deploy API to Cloud Run
-  - id: 'deploy-api'
-    name: 'gcr.io/cloud-builders/gcloud'
-    args:
-      - 'run'
-      - 'deploy'
-      - 'photogrammetry-api'
-      - '--image'
-      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:${SHORT_SHA}'
-      - '--region'
-      - '${_REGION}'
-      - '--platform'
-      - 'managed'
-    waitFor: ['push-api']
+      - "push"
+      - "southamerica-east1-docker.pkg.dev/$PROJECT_ID/photogrammetry/worker:$COMMIT_SHA"
 
 images:
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:${SHORT_SHA}'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/api:latest'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/worker:${SHORT_SHA}'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/worker:latest'
+  - "southamerica-east1-docker.pkg.dev/$PROJECT_ID/photogrammetry/api:$COMMIT_SHA"
+  - "southamerica-east1-docker.pkg.dev/$PROJECT_ID/photogrammetry/worker:$COMMIT_SHA"
 
 options:
   logging: CLOUD_LOGGING_ONLY
 
-timeout: '1800s'  # 30 minutes max
+timeout: "1800s"

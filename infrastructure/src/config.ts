@@ -10,6 +10,8 @@ export interface BatchMachineTier {
 }
 
 export interface RuntimeInfraConfig {
+    apiImageTag: string;
+    workerImageTag: string;
     allowedOrigins: string;
     batchAllowedZones: string[];
     batchMaxRunDuration: string;
@@ -69,7 +71,15 @@ export function loadRuntimeInfraConfig(config: pulumi.Config): RuntimeInfraConfi
         throw new Error("batchMachineTiers must have at least one tier.");
     }
 
+    const enableOperationalAlerts = config.getBoolean("enableOperationalAlerts") ?? false;
+    const alertNotificationEmail = config.get("alertNotificationEmail") || undefined;
+    if (environment === "prod" && enableOperationalAlerts && !alertNotificationEmail) {
+        throw new Error("alertNotificationEmail is required when enableOperationalAlerts=true in prod.");
+    }
+
     return {
+        apiImageTag: config.get("apiImageTag") || "latest",
+        workerImageTag: config.get("workerImageTag") || "latest",
         allowedOrigins: config.get("allowedOrigins") || defaultAllowedOrigins,
         batchAllowedZones,
         batchMaxRunDuration: config.get("batchMaxRunDuration") || "43200s",
@@ -85,11 +95,11 @@ export function loadRuntimeInfraConfig(config: pulumi.Config): RuntimeInfraConfi
         batchLogDestination: config.get("batchLogDestination") || "CLOUD_LOGGING",
         apiMinScale: config.getNumber("apiMinScale") ?? defaultApiMinScale,
         apiMaxScale: config.getNumber("apiMaxScale") ?? defaultApiMaxScale,
-        cloudRunPublicAccess: config.getBoolean("cloudRunPublicAccess") ?? true,
-        enableIap: config.getBoolean("enableIap") ?? false,
+        cloudRunPublicAccess: config.getBoolean("cloudRunPublicAccess") ?? (environment !== "prod"),
+        enableIap: config.getBoolean("enableIap") ?? (environment === "prod"),
         iapHostname: config.get("iapHostname") || "photogrammetry.courageousland.com",
-        enableOperationalAlerts: config.getBoolean("enableOperationalAlerts") ?? false,
-        alertNotificationEmail: config.get("alertNotificationEmail") || undefined,
+        enableOperationalAlerts,
+        alertNotificationEmail,
         pubsubBacklogSubscriptions: config.getObject<string[]>("pubsubBacklogSubscriptions") || [],
     };
 }

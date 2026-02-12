@@ -2,6 +2,8 @@ config:
   gcp:project: cl-operational
   gcp:region: southamerica-east1
   photogrammetry-service:environment: prod
+  photogrammetry-service:apiImageTag: latest
+  photogrammetry-service:workerImageTag: latest
   photogrammetry-service:allowedOrigins: "https://www.courageousland.com"
   photogrammetry-service:batchAllowedZones:
     - southamerica-east1-a
@@ -41,4 +43,5 @@ config:
   photogrammetry-service:enableIap: true
   photogrammetry-service:iapHostname: photogrammetry.courageousland.com
   photogrammetry-service:enableOperationalAlerts: true
+  photogrammetry-service:alertNotificationEmail: ops@courageousland.com
   photogrammetry-service:pubsubBacklogSubscriptions: []

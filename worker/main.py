@@ -10,9 +10,12 @@ This worker handles the complete photogrammetry processing pipeline:
 import json
 import logging
 import os
+import queue
+import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -82,6 +85,8 @@ class PhotogrammetryWorker:
 
     # Supported image formats
     SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
+    MAX_IMAGES = int(os.environ.get("MAX_INPUT_IMAGES", "2500"))
+    MAX_TOTAL_INPUT_BYTES = int(os.environ.get("MAX_INPUT_BYTES", str(50 * 1024 * 1024 * 1024)))  # 50 GB
 
     # Output files to upload (source_path, dest_name, output_type)
     OUTPUT_FILES = [
@@ -133,6 +138,7 @@ class PhotogrammetryWorker:
         self.pubsub_publisher = pubsub_v1.PublisherClient()
         self.pubsub_topic_name = os.environ.get("PUBSUB_TOPIC", "photogrammetry-status")
         self.pubsub_topic_path = self.pubsub_publisher.topic_path(config.gcp_project, self.pubsub_topic_name)
+        self.max_process_seconds = int(os.environ.get("ODM_TIMEOUT_SECONDS", "7200"))
 
         logger.info("Worker initialized")
         logger.info(f"  GCP Project: {config.gcp_project}")
@@ -150,7 +156,7 @@ class PhotogrammetryWorker:
             }
             message_bytes = json.dumps(message_data).encode("utf-8")
             future = self.pubsub_publisher.publish(self.pubsub_topic_path, message_bytes)
-            future.result()  # Wait for publish
+            future.result(timeout=30)
             logger.info(f"Published event: {event_type} for project {project_id}")
         except Exception as e:
             logger.warning(f"Failed to publish Pub/Sub event: {e}")
@@ -191,8 +197,11 @@ class PhotogrammetryWorker:
         prefix = f"{project_id}/"
         blobs = list(self.uploads_bucket.list_blobs(prefix=prefix))
         logger.info(f"Found {len(blobs)} files in storage")
+        if len(blobs) > self.MAX_IMAGES:
+            raise ValueError(f"Too many input files ({len(blobs)} > {self.MAX_IMAGES})")
 
         downloaded: List[Path] = []
+        total_bytes = 0
         for i, blob in enumerate(blobs):
             raw_name = blob.name.replace(prefix, "")
             # Security: extract only the basename to prevent path traversal
@@ -204,6 +213,11 @@ class PhotogrammetryWorker:
             extension = Path(safe_name).suffix.lower()
             if extension not in self.SUPPORTED_EXTENSIONS:
                 continue
+            total_bytes += int(blob.size or 0)
+            if total_bytes > self.MAX_TOTAL_INPUT_BYTES:
+                raise ValueError(
+                    f"Input size exceeds limit ({total_bytes} bytes > {self.MAX_TOTAL_INPUT_BYTES} bytes)"
+                )
 
             local_path = self.images_dir / safe_name
             # Double-check resolved path stays inside images_dir
@@ -261,10 +275,6 @@ class PhotogrammetryWorker:
                 return progress
         return 0
 
-    # Maximum wall-clock time for ODM (seconds). Cloud Batch also enforces
-    # its own max_run_duration, but this provides defense-in-depth.
-    MAX_PROCESS_SECONDS = int(os.environ.get("ODM_TIMEOUT_SECONDS", "7200"))
-
     def run_odm(self, project_id: str) -> None:
         """Execute OpenDroneMap processing."""
         cmd = self.build_odm_command()
@@ -279,20 +289,41 @@ class PhotogrammetryWorker:
             cwd=str(self.WORK_DIR)
         )
 
+        line_queue: queue.Queue[str | None] = queue.Queue()
+
+        def _pump_stdout() -> None:
+            try:
+                assert process.stdout is not None
+                for raw_line in process.stdout:
+                    line_queue.put(raw_line)
+            finally:
+                line_queue.put(None)
+
+        reader_thread = threading.Thread(target=_pump_stdout, daemon=True)
+        reader_thread.start()
+
         start_time = time.monotonic()
         last_progress = 0
-        for line in process.stdout:
-            # Check wall-clock timeout on every output line
-            if time.monotonic() - start_time > self.MAX_PROCESS_SECONDS:
-                logger.error("ODM exceeded %ds timeout — killing process", self.MAX_PROCESS_SECONDS)
+        stream_finished = False
+        while not stream_finished:
+            if time.monotonic() - start_time > self.max_process_seconds:
+                logger.error("ODM exceeded %ds timeout — killing process", self.max_process_seconds)
                 process.kill()
                 process.wait(timeout=30)
-                raise RuntimeError(f"ODM process timed out after {self.MAX_PROCESS_SECONDS}s")
+                raise RuntimeError(f"ODM process timed out after {self.max_process_seconds}s")
+            try:
+                line = line_queue.get(timeout=1)
+            except queue.Empty:
+                if process.poll() is not None:
+                    break
+                continue
+            if line is None:
+                stream_finished = True
+                continue
 
             line = line.strip()
             if line:
                 logger.info(f"[ODM] {line}")
-
                 new_progress = self.estimate_progress(line)
                 if new_progress > last_progress:
                     last_progress = new_progress
@@ -324,7 +355,7 @@ class PhotogrammetryWorker:
             blob = self.outputs_bucket.blob(blob_path)
 
             logger.info(f"Uploading {dest_name}...")
-            blob.upload_from_filename(str(local_path))
+            blob.upload_from_filename(str(local_path), content_type=self._guess_content_type(dest_name))
 
             size_bytes = local_path.stat().st_size
             size_mb = round(size_bytes / (1024 * 1024), 2)
@@ -340,6 +371,17 @@ class PhotogrammetryWorker:
             logger.info(f"Uploaded {dest_name} ({size_mb} MB)")
 
         return outputs
+
+    @staticmethod
+    def _guess_content_type(filename: str) -> str:
+        extension = Path(filename).suffix.lower()
+        content_types = {
+            ".tif": "image/tiff",
+            ".tiff": "image/tiff",
+            ".laz": "application/octet-stream",
+            ".zip": "application/zip",
+        }
+        return content_types.get(extension, "application/octet-stream")
 
     def cleanup(self) -> None:
         """Clean up temporary files."""
@@ -412,11 +454,12 @@ class PhotogrammetryWorker:
             return True
 
         except Exception as e:
-            logger.error(f"Processing failed: {e}")
-            self.update_status(project_id, "failed", error=str(e))
+            logger.exception("Processing failed for project %s", project_id)
+            safe_error = "Processing failed. Check worker logs for details."
+            self.update_status(project_id, "failed", error=safe_error)
 
             # Publish failure event
-            self.publish_event("project.failed", project_id, {"error": str(e)})
+            self.publish_event("project.failed", project_id, {"error": safe_error})
 
             return False
 
@@ -430,6 +473,13 @@ def main() -> None:
 
     if not project_id and len(sys.argv) > 1:
         project_id = sys.argv[1]
+    if project_id and not re.fullmatch(
+        r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        project_id,
+    ):
+        logger.error("PROJECT_ID invalido: deve ser UUID")
+        sys.exit(1)
+
 
     if not project_id:
         logger.error("PROJECT_ID not defined")

@@ -2,6 +2,8 @@ config:
   gcp:project: cl-operational
   gcp:region: southamerica-east1
   photogrammetry-service:environment: dev
+  photogrammetry-service:apiImageTag: latest
+  photogrammetry-service:workerImageTag: latest
   photogrammetry-service:allowedOrigins: "*"
   photogrammetry-service:batchAllowedZones:
     - southamerica-east1-a

@@ -54,7 +54,13 @@ const enabledApis = [
 
 // Storage
 const storage = createStorage(
-    { project, region, serviceName, environment },
+    {
+        project,
+        region,
+        serviceName,
+        environment,
+        allowedOrigins: runtimeInfra.allowedOrigins,
+    },
     enabledApis
 );
 
@@ -63,6 +69,8 @@ const firestore = new gcp.firestore.Database(`${serviceName}-db`, {
     name: "(default)",
     locationId: region,
     type: "FIRESTORE_NATIVE",
+    deleteProtectionState: "DELETE_PROTECTION_ENABLED",
+    pointInTimeRecoveryEnablement: "POINT_IN_TIME_RECOVERY_ENABLED",
 }, { dependsOn: enabledApis });
 
 // Artifact Registry
@@ -105,6 +113,8 @@ const cloudRun = createCloudRunService(
         uploadsBucketName: storage.uploadsBucket.name,
         outputsBucketName: storage.outputsBucket.name,
         artifactRegistryUrl,
+        apiImageTag: runtimeInfra.apiImageTag,
+        workerImageTag: runtimeInfra.workerImageTag,
         environment,
         allowedOrigins: runtimeInfra.allowedOrigins,
         batchAllowedZones: runtimeInfra.batchAllowedZones,
@@ -156,6 +166,7 @@ createOperationalMonitoring({
     pubsubBacklogSubscriptions: runtimeInfra.pubsubBacklogSubscriptions,
 });
 
+
 // Exports
 export const outputs = {
     // Buckets
@@ -192,6 +203,8 @@ export const outputs = {
     batchMaxRunDuration: runtimeInfra.batchMaxRunDuration,
     batchMaxRetryCount: runtimeInfra.batchMaxRetryCount,
     batchProvisioningModel: runtimeInfra.batchProvisioningModel,
+    apiImageTag: runtimeInfra.apiImageTag,
+    workerImageTag: runtimeInfra.workerImageTag,
 };
 
 // Individual exports for easy access

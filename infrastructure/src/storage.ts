@@ -13,6 +13,7 @@ export interface StorageConfig {
     region: string;
     serviceName: string;
     environment: string;
+    allowedOrigins: string;
 }
 
 export interface StorageResources {
@@ -24,13 +25,19 @@ export function createStorage(
     config: StorageConfig,
     dependsOn: pulumi.Resource[]
 ): StorageResources {
-    const { project, region, serviceName, environment } = config;
+    const { project, region, serviceName, environment, allowedOrigins } = config;
     
     // Determine lifecycle based on environment
     const uploadsLifecycleDays = environment === "prod" ? 30 : 7;
     
     // Lifecycle configuration per environment
     const outputsLifecycleDays = environment === "prod" ? 365 : 30;
+
+    const corsOrigins = allowedOrigins.split(",")
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0);
+
+    const effectiveCorsOrigins = corsOrigins.length > 0 ? corsOrigins : ["*"];
 
     // Uploads bucket - for raw images
     const uploadsBucket = new gcp.storage.Bucket(`${serviceName}-uploads`, {
@@ -44,8 +51,8 @@ export function createStorage(
             condition: { age: uploadsLifecycleDays },
         }],
         cors: [{
-            origins: ["*"], // Configure for specific domains in production
-            methods: ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"],
+            origins: effectiveCorsOrigins,
+            methods: ["GET", "PUT", "POST", "HEAD", "OPTIONS"],
             responseHeaders: [
                 "*",
                 "Content-Type",
@@ -72,7 +79,7 @@ export function createStorage(
             condition: { age: outputsLifecycleDays },
         }],
         cors: [{
-            origins: ["*"],
+            origins: effectiveCorsOrigins,
             methods: ["GET"],
             responseHeaders: ["*"],
             maxAgeSeconds: 3600,

@@ -15,6 +15,8 @@ export interface CloudRunConfig {
     uploadsBucketName: pulumi.Input<string>;
     outputsBucketName: pulumi.Input<string>;
     artifactRegistryUrl: pulumi.Input<string>;
+    apiImageTag: string;
+    workerImageTag: string;
     environment: string;
     allowedOrigins: string;
     batchAllowedZones: string[];
@@ -51,6 +53,8 @@ export function createCloudRunService(
         uploadsBucketName,
         outputsBucketName,
         artifactRegistryUrl,
+        apiImageTag,
+        workerImageTag,
         environment,
         allowedOrigins,
         batchAllowedZones,
@@ -76,7 +80,7 @@ export function createCloudRunService(
             spec: {
                 serviceAccountName: apiServiceAccountEmail,
                 containers: [{
-                    image: pulumi.interpolate`${artifactRegistryUrl}/api:latest`,
+                    image: pulumi.interpolate`${artifactRegistryUrl}/api:${apiImageTag}`,
                     ports: [{ containerPort: 8080 }],
                     envs: [
                         { name: "GCP_PROJECT", value: project },
@@ -88,7 +92,7 @@ export function createCloudRunService(
                         { name: "SERVICE_ACCOUNT_EMAIL", value: apiServiceAccountEmail },
                         { 
                             name: "WORKER_IMAGE", 
-                            value: pulumi.interpolate`${artifactRegistryUrl}/worker:latest` 
+                            value: pulumi.interpolate`${artifactRegistryUrl}/worker:${workerImageTag}` 
                         },
                         { name: "WORKER_SERVICE_ACCOUNT", value: workerServiceAccountEmail },
                         { name: "PUBSUB_TOPIC", value: "photogrammetry-status" },
@@ -107,6 +111,24 @@ export function createCloudRunService(
                         limits: {
                             memory: "512Mi",
                             cpu: "1",
+                        },
+                    },
+                    startupProbe: {
+                        timeoutSeconds: 3,
+                        periodSeconds: 10,
+                        failureThreshold: 12,
+                        httpGet: {
+                            path: "/health",
+                            port: 8080,
+                        },
+                    },
+                    livenessProbe: {
+                        timeoutSeconds: 3,
+                        periodSeconds: 20,
+                        failureThreshold: 3,
+                        httpGet: {
+                            path: "/health",
+                            port: 8080,
                         },
                     },
                 }],
@@ -135,16 +157,6 @@ export function createCloudRunService(
         // Allow public access (only when IAP is NOT enabled)
         // When IAP is active, the LB handles auth and Cloud Run ingress
         // is restricted to internal-and-cloud-load-balancing
-        new gcp.cloudrun.IamMember(`${serviceName}-api-invoker`, {
-            service: service.name,
-            location: region,
-            role: "roles/run.invoker",
-            member: "allUsers",
-        });
-    } else if (enableIap) {
-        // When IAP is enabled, keep allUsers invoker but rely on ingress
-        // restriction to block direct .run.app access. The LB/IAP handles
-        // authentication before traffic reaches Cloud Run.
         new gcp.cloudrun.IamMember(`${serviceName}-api-invoker`, {
             service: service.name,
             location: region,

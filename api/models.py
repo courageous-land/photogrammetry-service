@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProjectStatus(str, Enum):
@@ -43,6 +43,15 @@ class UploadUrlRequest(BaseModel):
         description="Tipo MIME do arquivo",
     )
     resumable: bool | None = Field(True, description="Usar upload resumable (recomendado para arquivos > 5MB)")
+
+    @field_validator("content_type")
+    @classmethod
+    def validate_content_type(cls, value: str | None) -> str:
+        normalized = (value or "image/jpeg").strip().lower()
+        if normalized not in _ALLOWED_CONTENT_TYPES:
+            allowed = ", ".join(sorted(_ALLOWED_CONTENT_TYPES))
+            raise ValueError(f"content_type inválido. Permitidos: {allowed}")
+        return normalized
 
 
 class UploadUrlResponse(BaseModel):

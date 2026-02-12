@@ -57,6 +57,7 @@ def mock_services(monkeypatch):
     mock_storage.get_uploaded_files = AsyncMock()
     mock_storage.generate_upload_url = AsyncMock()
     mock_storage.generate_download_url = AsyncMock()
+    mock_storage.transition_status = AsyncMock()
     mock_pubsub.publish_project_created = AsyncMock(return_value="msg-1")
     mock_pubsub.publish_project_processing_started = AsyncMock(return_value="msg-2")
     mock_processor.start_processing = AsyncMock()
@@ -196,11 +197,49 @@ class TestFinalizeUpload:
     async def test_finalize_success(self, client, mock_services):
         mock_services["storage"].get_project.return_value = _make_project()
         mock_services["storage"].get_uploaded_files.return_value = ["image1.jpg", "image2.jpg"]
-        mock_services["storage"].update_project.return_value = _make_project(status="pending")
+        mock_services["storage"].transition_status.return_value = _make_project(status="pending")
 
         resp = await client.post(f"/projects/{FAKE_UUID}/finalize-upload")
         assert resp.status_code == 200
         assert resp.json()["files_count"] == 2
+
+
+class TestUploadUrl:
+    @pytest.mark.asyncio
+    async def test_upload_url_success(self, client, mock_services):
+        mock_services["storage"].generate_upload_url.return_value = {
+            "upload_url": "https://storage.googleapis.com/upload/session",
+            "file_id": "file-1",
+            "upload_type": "resumable",
+            "chunk_size": 5242880,
+        }
+
+        resp = await client.post(
+            f"/projects/{FAKE_UUID}/upload-url",
+            json={
+                "filename": "image.jpg",
+                "content_type": "image/jpeg",
+                "file_size": 1024,
+                "resumable": True,
+            },
+            headers={"origin": "http://test"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["file_id"] == "file-1"
+
+    @pytest.mark.asyncio
+    async def test_upload_url_rejects_invalid_content_type(self, client, mock_services):
+        resp = await client.post(
+            f"/projects/{FAKE_UUID}/upload-url",
+            json={
+                "filename": "evil.html",
+                "content_type": "text/html",
+                "file_size": 1024,
+                "resumable": True,
+            },
+            headers={"origin": "http://test"},
+        )
+        assert resp.status_code == 422
 
 
 class TestStartProcessing:
@@ -250,3 +289,10 @@ class TestGetResult:
         data = resp.json()
         assert len(data["outputs"]) == 1
         assert len(data["download_urls"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_result_requires_completed_status(self, client, mock_services):
+        mock_services["storage"].get_project.return_value = _make_project(status="processing")
+
+        resp = await client.get(f"/projects/{FAKE_UUID}/result")
+        assert resp.status_code == 409

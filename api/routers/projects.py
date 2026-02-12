@@ -231,11 +231,19 @@ async def finalize_upload(project_id: str = _PROJECT_ID):
     if files_count == 0:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
-    # Update status to PENDING
-    await storage_service.update_project(project_id, {
-        "status": ProjectStatus.PENDING.value,
-        "files_count": files_count
-    })
+    transitioned = await storage_service.transition_status(
+        project_id=project_id,
+        allowed_from=[ProjectStatus.CREATED.value, ProjectStatus.UPLOADING.value],
+        new_status=ProjectStatus.PENDING.value,
+        extra_updates={"files_count": files_count},
+    )
+    if not transitioned:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if transitioned.get("__rejected"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot finalize upload from status '{transitioned.get('current_status')}'",
+        )
 
     return {
         "success": True,
@@ -304,6 +312,9 @@ async def get_project_result(project_id: str = _PROJECT_ID):
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    if project.get("status") != ProjectStatus.COMPLETED.value:
+        raise HTTPException(status_code=409, detail="Project is not completed yet")
 
     outputs = project.get("outputs", [])
 

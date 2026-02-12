@@ -11,6 +11,7 @@ Architecture:
 """
 import logging
 import os
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers import projects
 
 logger = logging.getLogger(__name__)
+APP_VERSION = "1.0.0"
 
 
 def load_allowed_origins() -> list[str]:
@@ -107,7 +109,7 @@ digital surface models (DSM), digital terrain models (DTM), and point clouds.
 | `generate_dtm` | true, false | Generate terrain model |
 | `multispectral` | true, false | Multispectral processing |
     """,
-    version="1.0.0",
+    version=APP_VERSION,
     lifespan=lifespan
 )
 
@@ -136,7 +138,7 @@ async def root():
     return {
         "service": "Photogrammetry Service",
         "status": "running",
-        "version": "1.0.0"
+        "version": APP_VERSION
     }
 
 
@@ -149,7 +151,9 @@ async def health():
 
     # Firestore connectivity
     try:
-        storage_service.firestore_client.collection("_health").limit(1).get()
+        await asyncio.to_thread(
+            storage_service.firestore_client.collection("_health").limit(1).get
+        )
         components["firestore"] = "up"
     except Exception as exc:
         logger.warning("Health check: Firestore unreachable — %s", exc)
@@ -157,7 +161,7 @@ async def health():
 
     # Cloud Storage connectivity
     try:
-        storage_service.uploads_bucket.exists()
+        await asyncio.to_thread(storage_service.uploads_bucket.exists)
         components["storage"] = "up"
     except Exception as exc:
         logger.warning("Health check: Cloud Storage unreachable — %s", exc)

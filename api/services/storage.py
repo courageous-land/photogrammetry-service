@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import re
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
@@ -45,7 +46,7 @@ def sanitize_filename(filename: str) -> str:
     filename = filename.replace("..", "")
 
     # Keep only safe characters: letters, numbers, dash, underscore, dot, space
-    filename = re.sub(r'[^\w\-. ]', '_', filename)
+    filename = re.sub(r'[^A-Za-z0-9_.\- ]', '_', filename)
 
     # Remove leading/trailing dots and spaces (prevents hidden files)
     filename = filename.strip('. ')
@@ -102,6 +103,7 @@ class StorageService:
 
         # Auth request for token refresh
         self._auth_request = requests.Request()
+        self._credentials_lock = threading.Lock()
 
         # Service account email for signing URLs
         self.service_account_email = self._get_service_account_email()
@@ -135,8 +137,9 @@ class StorageService:
 
     def _get_access_token(self) -> str:
         """Get updated access token for signing URLs."""
-        if not self.credentials.valid:
-            self.credentials.refresh(self._auth_request)
+        with self._credentials_lock:
+            if not self.credentials.valid:
+                self.credentials.refresh(self._auth_request)
         return self.credentials.token
 
     # ------------------------------------------------------------------
@@ -201,7 +204,7 @@ class StorageService:
 
     def _get_uploaded_files_sync(self, project_id: str) -> list[str]:
         prefix = f"{project_id}/"
-        blobs = self.uploads_bucket.list_blobs(prefix=prefix)
+        blobs = self.uploads_bucket.list_blobs(prefix=prefix, max_results=5000)
         return [blob.name.replace(prefix, "") for blob in blobs]
 
     # ------------------------------------------------------------------
@@ -388,8 +391,7 @@ class StorageService:
         if resumable and file_size:
             # Resumable upload — offload blocking call
             def _create_session():
-                if not self.credentials.valid:
-                    self.credentials.refresh(self._auth_request)
+                self._get_access_token()
                 return blob.create_resumable_upload_session(
                     content_type=content_type,
                     size=file_size,
