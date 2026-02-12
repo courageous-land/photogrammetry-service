@@ -26,23 +26,34 @@ class CreateProjectResponse(BaseModel):
     created_at: datetime
 
 
-_ALLOWED_CONTENT_TYPES = frozenset({
-    "image/jpeg", "image/png", "image/tiff", "image/gif", "image/webp",
-    "application/octet-stream",
-})
+_ALLOWED_CONTENT_TYPES = frozenset(
+    {
+        "image/jpeg",
+        "image/png",
+        "image/tiff",
+        "image/gif",
+        "image/webp",
+        "application/octet-stream",
+    }
+)
 
 
 class UploadUrlRequest(BaseModel):
     filename: str = Field(..., min_length=1, max_length=1024)
     file_size: int | None = Field(
-        None, ge=1, le=5_368_709_120,
+        None,
+        ge=1,
+        le=5_368_709_120,
         description="Tamanho do arquivo em bytes (1 B – 5 GB, necessário para resumable)",
     )
     content_type: str | None = Field(
-        "image/jpeg", max_length=128,
+        "image/jpeg",
+        max_length=128,
         description="Tipo MIME do arquivo",
     )
-    resumable: bool | None = Field(True, description="Usar upload resumable (recomendado para arquivos > 5MB)")
+    resumable: bool | None = Field(
+        True, description="Usar upload resumable (recomendado para arquivos > 5MB)"
+    )
 
     @field_validator("content_type")
     @classmethod
@@ -63,7 +74,9 @@ class UploadUrlResponse(BaseModel):
 
 
 class ProcessingOptions(BaseModel):
-    ortho_quality: str | None = Field("medium", pattern="^(low|medium|high)$", description="Qualidade: low, medium, high")
+    ortho_quality: str | None = Field(
+        "medium", pattern="^(low|medium|high)$", description="Qualidade: low, medium, high"
+    )
     generate_dtm: bool | None = Field(False, description="Gerar modelo digital de terreno")
     multispectral: bool | None = Field(False, description="Processamento multiespectral")
 

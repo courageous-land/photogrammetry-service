@@ -5,6 +5,7 @@ Handles all storage operations:
 - Cloud Storage: Image uploads and processed outputs
 - Firestore: Project metadata and status tracking
 """
+
 import asyncio
 import logging
 import os
@@ -46,17 +47,17 @@ def sanitize_filename(filename: str) -> str:
     filename = filename.replace("..", "")
 
     # Keep only safe characters: letters, numbers, dash, underscore, dot, space
-    filename = re.sub(r'[^A-Za-z0-9_.\- ]', '_', filename)
+    filename = re.sub(r"[^A-Za-z0-9_.\- ]", "_", filename)
 
     # Remove leading/trailing dots and spaces (prevents hidden files)
-    filename = filename.strip('. ')
+    filename = filename.strip(". ")
 
     # Limit length
     if len(filename) > 255:
         p = PurePosixPath(filename)
         ext = p.suffix
         name = p.stem
-        filename = name[:255 - len(ext)] + ext
+        filename = name[: 255 - len(ext)] + ext
 
     # Fallback if empty after sanitization
     if not filename:
@@ -81,12 +82,10 @@ class StorageService:
             raise ValueError("GCP_PROJECT environment variable is required")
 
         self.uploads_bucket_name = os.environ.get(
-            "UPLOADS_BUCKET",
-            f"{self.project_id}-photogrammetry-uploads"
+            "UPLOADS_BUCKET", f"{self.project_id}-photogrammetry-uploads"
         )
         self.outputs_bucket_name = os.environ.get(
-            "OUTPUTS_BUCKET",
-            f"{self.project_id}-photogrammetry-outputs"
+            "OUTPUTS_BUCKET", f"{self.project_id}-photogrammetry-outputs"
         )
 
         # GCP credentials
@@ -116,19 +115,23 @@ class StorageService:
             return sa_email
 
         # 2. Credentials attribute
-        if hasattr(self.credentials, 'service_account_email') and self.credentials.service_account_email:
+        if (
+            hasattr(self.credentials, "service_account_email")
+            and self.credentials.service_account_email
+        ):
             return self.credentials.service_account_email
 
         # 3. Metadata server (Cloud Run/GCE/GKE)
         try:
             import urllib.request
+
             metadata_url = (
                 "http://metadata.google.internal/computeMetadata/v1/"
                 "instance/service-accounts/default/email"
             )
             req = urllib.request.Request(metadata_url, headers={"Metadata-Flavor": "Google"})
             with urllib.request.urlopen(req, timeout=2) as response:
-                return response.read().decode('utf-8')
+                return response.read().decode("utf-8")
         except Exception:
             pass
 
@@ -188,9 +191,7 @@ class StorageService:
         doc_ref.update(updates, timeout=10)
         return doc_ref.get(timeout=10).to_dict()
 
-    def _list_projects_sync(
-        self, user_id: str | None, limit: int
-    ) -> list[dict[str, Any]]:
+    def _list_projects_sync(self, user_id: str | None, limit: int) -> list[dict[str, Any]]:
         query = self.projects_collection
 
         if user_id:
@@ -211,9 +212,7 @@ class StorageService:
     # Transactional helpers (prevent race conditions on shared state)
     # ------------------------------------------------------------------
 
-    def _append_file_sync(
-        self, project_id: str, file_data: dict[str, Any]
-    ) -> bool:
+    def _append_file_sync(self, project_id: str, file_data: dict[str, Any]) -> bool:
         """Atomically append a file entry to the project's files list."""
         doc_ref = self.projects_collection.document(project_id)
         transaction = self.firestore_client.transaction()
@@ -226,11 +225,14 @@ class StorageService:
             project_data = doc.to_dict()
             files = project_data.get("files", [])
             files.append(file_data)
-            transaction.update(doc_ref, {
-                "files": files,
-                "status": ProjectStatus.UPLOADING.value,
-                "updated_at": datetime.now(UTC).isoformat(),
-            })
+            transaction.update(
+                doc_ref,
+                {
+                    "files": files,
+                    "status": ProjectStatus.UPLOADING.value,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                },
+            )
             return True
 
         return _txn(transaction)
@@ -255,10 +257,13 @@ class StorageService:
                     found = True
                     break
             if found:
-                transaction.update(doc_ref, {
-                    "files": files,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                })
+                transaction.update(
+                    doc_ref,
+                    {
+                        "files": files,
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    },
+                )
             return found
 
         return _txn(transaction)

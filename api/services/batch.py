@@ -8,6 +8,7 @@ Infrastructure parameters (machine tiers, disk sizing, zones, retries, etc.) are
 owned by Pulumi stack config and injected via environment variables.
 The only domain logic here is the selection algorithm and disk formula.
 """
+
 import asyncio
 import json
 import os
@@ -19,6 +20,7 @@ from google.cloud import batch_v1
 # ---------------------------------------------------------------------------
 # Environment contract helpers
 # ---------------------------------------------------------------------------
+
 
 def require_env(name: str) -> str:
     """Read required environment variable."""
@@ -85,9 +87,7 @@ def parse_log_destination(raw_value: str):
     dest = dest_map.get(raw_value.strip().upper())
     if dest is None:
         allowed = ", ".join(sorted(dest_map.keys()))
-        raise ValueError(
-            f"BATCH_LOG_DESTINATION invalid value '{raw_value}'. Allowed: {allowed}"
-        )
+        raise ValueError(f"BATCH_LOG_DESTINATION invalid value '{raw_value}'. Allowed: {allowed}")
     return dest
 
 
@@ -114,6 +114,7 @@ def parse_machine_tiers(raw_json: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Domain logic (ODM sizing — stays in code)
 # ---------------------------------------------------------------------------
+
 
 def select_machine_tier(
     file_count: int,
@@ -170,6 +171,7 @@ def calculate_disk_size(
 # Service
 # ---------------------------------------------------------------------------
 
+
 class BatchService:
     """
     Service for creating jobs on Cloud Batch.
@@ -198,9 +200,7 @@ class BatchService:
         self.allowed_locations = parse_allowed_zones(require_env("BATCH_ALLOWED_ZONES"))
         self.max_run_duration = require_env("BATCH_MAX_RUN_DURATION")
         self.max_retry_count = parse_int_env("BATCH_MAX_RETRY_COUNT")
-        self.provisioning_model = parse_provisioning_model(
-            require_env("BATCH_PROVISIONING_MODEL")
-        )
+        self.provisioning_model = parse_provisioning_model(require_env("BATCH_PROVISIONING_MODEL"))
         self.log_destination = parse_log_destination(require_env("BATCH_LOG_DESTINATION"))
 
         # Capacity planning (infra-owned)
@@ -212,10 +212,7 @@ class BatchService:
         self.client = batch_v1.BatchServiceClient()
 
     async def create_processing_job(
-        self,
-        project_id: str,
-        file_count: int,
-        options: dict[str, Any] | None = None
+        self, project_id: str, file_count: int, options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """
         Create a Cloud Batch job to process the project.
@@ -225,9 +222,7 @@ class BatchService:
         job_name = f"photogrammetry-{project_id[:8]}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
         # Domain logic: select tier and compute disk
-        machine_type, cpu_milli, memory_mib = select_machine_tier(
-            file_count, self.machine_tiers
-        )
+        machine_type, cpu_milli, memory_mib = select_machine_tier(file_count, self.machine_tiers)
         disk_size_mib = calculate_disk_size(
             file_count,
             self.avg_image_size_mb,
@@ -246,9 +241,7 @@ class BatchService:
 
         # VM resources — dynamically sized based on workload
         resources = batch_v1.ComputeResource(
-            cpu_milli=cpu_milli,
-            memory_mib=memory_mib,
-            boot_disk_mib=disk_size_mib
+            cpu_milli=cpu_milli, memory_mib=memory_mib, boot_disk_mib=disk_size_mib
         )
 
         # Processing options (user input per project)
@@ -274,14 +267,11 @@ class BatchService:
                     "GENERATE_DTM": "true" if generate_dtm else "false",
                     "MULTISPECTRAL": "true" if multispectral else "false",
                 }
-            )
+            ),
         )
 
         # Task group (single task per job)
-        task_group = batch_v1.TaskGroup(
-            task_count=1,
-            task_spec=task_spec
-        )
+        task_group = batch_v1.TaskGroup(task_count=1, task_spec=task_spec)
 
         # Allocation policy
         allocation_policy = batch_v1.AllocationPolicy(
@@ -296,9 +286,7 @@ class BatchService:
             location=batch_v1.AllocationPolicy.LocationPolicy(
                 allowed_locations=self.allowed_locations
             ),
-            service_account=batch_v1.ServiceAccount(
-                email=self.worker_service_account
-            )
+            service_account=batch_v1.ServiceAccount(email=self.worker_service_account),
         )
 
         # Create job
@@ -309,18 +297,14 @@ class BatchService:
                 "project-id": project_id[:60],
                 "type": "photogrammetry",
                 "file-count": str(min(file_count, 9999)),
-                "machine-type": machine_type.replace("-", "_")
+                "machine-type": machine_type.replace("-", "_"),
             },
-            logs_policy=batch_v1.LogsPolicy(
-                destination=self.log_destination
-            )
+            logs_policy=batch_v1.LogsPolicy(destination=self.log_destination),
         )
 
         # Request to create job
         request = batch_v1.CreateJobRequest(
-            parent=f"projects/{self.project_id}/locations/{self.region}",
-            job_id=job_name,
-            job=job
+            parent=f"projects/{self.project_id}/locations/{self.region}", job_id=job_name, job=job
         )
 
         result = await asyncio.to_thread(self.client.create_job, request=request, timeout=60)
@@ -334,7 +318,7 @@ class BatchService:
             "memory_gb": memory_mib // 1024,
             "disk_gb": disk_size_mib // 1024,
             "file_count": file_count,
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now().isoformat(),
         }
 
     async def get_job_status(self, job_name: str) -> dict[str, Any]:
@@ -349,8 +333,8 @@ class BatchService:
                 {
                     "type": e.type_,
                     "description": e.description,
-                    "timestamp": e.event_time.isoformat() if e.event_time else None
+                    "timestamp": e.event_time.isoformat() if e.event_time else None,
                 }
                 for e in job.status.status_events
-            ]
+            ],
         }

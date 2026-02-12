@@ -7,6 +7,7 @@ Adds the ``api/`` directory to ``sys.path`` so that imports like
 IMPORTANT: Environment variables are set at *session* scope (before collection)
 because ``services/__init__.py`` eagerly instantiates GCP clients on import.
 """
+
 import os
 import sys
 from pathlib import Path

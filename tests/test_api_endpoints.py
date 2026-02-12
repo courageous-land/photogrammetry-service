@@ -3,6 +3,7 @@ Integration tests for API endpoints using FastAPI TestClient.
 
 GCP services are mocked so tests run without credentials.
 """
+
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -111,7 +112,9 @@ class TestHealthEndpoints:
 
     @pytest.mark.asyncio
     async def test_health_all_up(self, client, mock_services):
-        mock_services["storage"].firestore_client.collection.return_value.limit.return_value.get.return_value = []
+        mock_services[
+            "storage"
+        ].firestore_client.collection.return_value.limit.return_value.get.return_value = []
         mock_services["storage"].uploads_bucket.exists.return_value = True
 
         resp = await client.get("/health")
@@ -122,7 +125,11 @@ class TestHealthEndpoints:
 
     @pytest.mark.asyncio
     async def test_health_degraded(self, client, mock_services):
-        mock_services["storage"].firestore_client.collection.return_value.limit.return_value.get.side_effect = Exception("down")
+        mock_services[
+            "storage"
+        ].firestore_client.collection.return_value.limit.return_value.get.side_effect = Exception(
+            "down"
+        )
         mock_services["storage"].uploads_bucket.exists.return_value = True
 
         resp = await client.get("/health")

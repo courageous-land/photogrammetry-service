@@ -3,6 +3,7 @@ Pub/Sub Service
 
 Handles publishing events for photogrammetry processing lifecycle.
 """
+
 import asyncio
 import json
 import logging
@@ -30,10 +31,7 @@ class PubSubService:
             raise ValueError("GCP_PROJECT environment variable is required")
 
         # Use existing topics: photogrammetry-status for status updates
-        self.topic_name = os.environ.get(
-            "PUBSUB_TOPIC",
-            "photogrammetry-status"
-        )
+        self.topic_name = os.environ.get("PUBSUB_TOPIC", "photogrammetry-status")
 
         self.publisher = pubsub_v1.PublisherClient()
         self.topic_path = self.publisher.topic_path(self.project_id, self.topic_name)
@@ -85,9 +83,7 @@ class PubSubService:
             {"name": project_data.get("name"), "status": project_data.get("status")},
         )
 
-    async def publish_project_processing_started(
-        self, project_id: str, job_info: dict[str, Any]
-    ):
+    async def publish_project_processing_started(self, project_id: str, job_info: dict[str, Any]):
         """Publish processing started event."""
         return await self.publish_event(
             "project.processing_started",

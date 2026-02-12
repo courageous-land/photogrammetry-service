@@ -9,6 +9,7 @@ Architecture:
 - Firestore: Project metadata and status
 - Cloud Batch: Processing jobs with OpenDroneMap
 """
+
 import asyncio
 import logging
 import os
@@ -111,7 +112,7 @@ digital surface models (DSM), digital terrain models (DTM), and point clouds.
 | `multispectral` | true, false | Multispectral processing |
     """,
     version=APP_VERSION,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS configuration is controlled by Pulumi stacks
@@ -136,11 +137,7 @@ app.include_router(projects.router)
 @app.get("/", tags=["Health"])
 async def root():
     """Service health check."""
-    return {
-        "service": "Photogrammetry Service",
-        "status": "running",
-        "version": APP_VERSION
-    }
+    return {"service": "Photogrammetry Service", "status": "running", "version": APP_VERSION}
 
 
 @app.get("/health", tags=["Health"])
@@ -152,9 +149,7 @@ async def health():
 
     # Firestore connectivity
     try:
-        await asyncio.to_thread(
-            storage_service.firestore_client.collection("_health").limit(1).get
-        )
+        await asyncio.to_thread(storage_service.firestore_client.collection("_health").limit(1).get)
         components["firestore"] = "up"
     except Exception as exc:
         logger.warning("Health check: Firestore unreachable — %s", exc)

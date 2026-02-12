@@ -3,6 +3,7 @@ Unit tests for main.py — CORS origin loading and validation.
 
 Pure function, no GCP dependencies.
 """
+
 import pytest
 
 from main import load_allowed_origins

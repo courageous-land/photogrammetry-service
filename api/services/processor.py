@@ -4,6 +4,7 @@ Processor Service
 Orchestrates the photogrammetry processing workflow.
 Validates projects and dispatches processing jobs to Cloud Batch.
 """
+
 import logging
 from typing import Any
 
@@ -22,9 +23,7 @@ class ProcessorService:
         self.batch = batch_service
 
     async def start_processing(
-        self,
-        project_id: str,
-        options: dict[str, Any] | None = None
+        self, project_id: str, options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """
         Start processing a project.
@@ -75,31 +74,27 @@ class ProcessorService:
         # Create batch job with dynamic machine sizing
         try:
             job_info = await self.batch.create_processing_job(
-                project_id=project_id,
-                file_count=file_count,
-                options=options
+                project_id=project_id, file_count=file_count, options=options
             )
 
             # Save job info
-            await self.storage.update_project(project_id, {
-                "batch_job": job_info
-            })
+            await self.storage.update_project(project_id, {"batch_job": job_info})
 
             return {
                 "success": True,
                 "message": f"Processing started. Job: {job_info['job_id']}",
-                "job_info": job_info
+                "job_info": job_info,
             }
 
         except Exception as e:
             # Log full error server-side; return sanitized message to client
             logger.error("Failed to create batch job for %s: %s", project_id, e)
-            await self.storage.update_project(project_id, {
-                "status": ProjectStatus.FAILED.value,
-                "error_message": "Internal error creating processing job",
-            })
+            await self.storage.update_project(
+                project_id,
+                {
+                    "status": ProjectStatus.FAILED.value,
+                    "error_message": "Internal error creating processing job",
+                },
+            )
 
-            return {
-                "success": False,
-                "error": "Failed to create processing job"
-            }
+            return {"success": False, "error": "Failed to create processing job"}

@@ -3,6 +3,7 @@ Unit tests for batch.py domain logic and environment parsers.
 
 These tests cover pure functions — no GCP SDK calls.
 """
+
 import json
 
 import pytest
@@ -106,10 +107,12 @@ class TestParseAllowedZones:
 # ---------------------------------------------------------------------------
 
 
-VALID_TIERS_JSON = json.dumps([
-    {"maxImages": 500, "machineType": "n2-standard-8", "cpuMilli": 8000, "memoryMib": 32768},
-    {"maxImages": 200, "machineType": "n2-standard-4", "cpuMilli": 4000, "memoryMib": 16384},
-])
+VALID_TIERS_JSON = json.dumps(
+    [
+        {"maxImages": 500, "machineType": "n2-standard-8", "cpuMilli": 8000, "memoryMib": 32768},
+        {"maxImages": 200, "machineType": "n2-standard-4", "cpuMilli": 4000, "memoryMib": 16384},
+    ]
+)
 
 
 class TestParseMachineTiers:
