@@ -37,6 +37,8 @@ config:
   photogrammetry-service:batchLogDestination: CLOUD_LOGGING
   photogrammetry-service:apiMinScale: 1
   photogrammetry-service:apiMaxScale: 20
-  photogrammetry-service:cloudRunPublicAccess: true
+  photogrammetry-service:cloudRunPublicAccess: false
+  photogrammetry-service:enableIap: true
+  photogrammetry-service:iapHostname: photogrammetry.courageousland.com
   photogrammetry-service:enableOperationalAlerts: true
   photogrammetry-service:pubsubBacklogSubscriptions: []

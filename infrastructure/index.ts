@@ -17,6 +17,8 @@ import * as gcp from "@pulumi/gcp";
 import { createStorage } from "./src/storage";
 import { createServiceAccounts, configureIamPermissions } from "./src/iam";
 import { createCloudRunService } from "./src/cloud-run";
+import { createIapBackend } from "./src/iap";
+import { createCloudflareDnsRecord } from "./src/cloudflare-dns";
 import { loadRuntimeInfraConfig } from "./src/config";
 import { createOperationalMonitoring } from "./src/monitoring";
 
@@ -41,6 +43,7 @@ const enabledApis = [
     "compute.googleapis.com",
     "pubsub.googleapis.com",
     "monitoring.googleapis.com",
+    "iap.googleapis.com",
 ].map((api) =>
     new gcp.projects.Service(`enable-${api.split(".")[0]}`, {
         project,
@@ -117,9 +120,32 @@ const cloudRun = createCloudRunService(
         apiMinScale: runtimeInfra.apiMinScale,
         apiMaxScale: runtimeInfra.apiMaxScale,
         cloudRunPublicAccess: runtimeInfra.cloudRunPublicAccess,
+        enableIap: runtimeInfra.enableIap,
     },
     [...enabledApis, pubsubStatusTopic]
 );
+
+// IAP Backend (Serverless NEG + Backend Service with IAP enabled)
+let iapBackend: ReturnType<typeof createIapBackend> | undefined;
+if (runtimeInfra.enableIap) {
+    iapBackend = createIapBackend(
+        {
+            project,
+            region,
+            serviceName,
+            cloudRunService: cloudRun.service,
+            iapHostname: runtimeInfra.iapHostname,
+            environment,
+        },
+        enabledApis
+    );
+
+    // Create Cloudflare DNS record pointing to the LB IP
+    createCloudflareDnsRecord({
+        hostname: runtimeInfra.iapHostname,
+        loadBalancerIp: iapBackend.ipAddress,
+    });
+}
 
 createOperationalMonitoring({
     project,
@@ -149,6 +175,12 @@ export const outputs = {
     // Pub/Sub
     pubsubStatusTopicName: pubsubStatusTopic.name,
     
+    // IAP
+    iapEnabled: runtimeInfra.enableIap,
+    iapHostname: runtimeInfra.enableIap ? runtimeInfra.iapHostname : undefined,
+    iapBackendServiceName: iapBackend?.backendServiceName,
+    iapLoadBalancerIp: iapBackend?.ipAddress,
+
     // Configuration
     project,
     region,

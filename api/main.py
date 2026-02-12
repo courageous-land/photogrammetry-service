@@ -123,7 +123,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_credentials=allow_credentials,
     allow_methods=["GET", "POST", "PUT", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    allow_headers=["*"],
 )
 
 # Routers

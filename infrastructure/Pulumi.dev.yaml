@@ -7,7 +7,7 @@ config:
     - southamerica-east1-a
     - southamerica-east1-b
   photogrammetry-service:batchMaxRunDuration: 43200s
-  photogrammetry-service:batchMaxRetryCount: 2
+  photogrammetry-service:batchMaxRetryCount: "2"
   photogrammetry-service:batchProvisioningModel: STANDARD
   photogrammetry-service:batchMachineTiers:
     - maxImages: 200
@@ -30,13 +30,18 @@ config:
       machineType: n2-highmem-32
       cpuMilli: 32000
       memoryMib: 262144
-  photogrammetry-service:batchMinBootDiskMb: 51200
-  photogrammetry-service:batchDiskSafetyMargin: 1.15
-  photogrammetry-service:batchAvgImageSizeMb: 9
+  photogrammetry-service:batchMinBootDiskMb: "51200"
+  photogrammetry-service:batchDiskSafetyMargin: "1.15"
+  photogrammetry-service:batchAvgImageSizeMb: "9"
   photogrammetry-service:batchWorkerCommand: "python3,/worker/main.py"
   photogrammetry-service:batchLogDestination: CLOUD_LOGGING
-  photogrammetry-service:apiMinScale: 0
-  photogrammetry-service:apiMaxScale: 10
-  photogrammetry-service:cloudRunPublicAccess: true
-  photogrammetry-service:enableOperationalAlerts: false
+  photogrammetry-service:apiMinScale: "0"
+  photogrammetry-service:apiMaxScale: "10"
+  photogrammetry-service:cloudRunPublicAccess: "false"
+  photogrammetry-service:enableIap: "true"
+  photogrammetry-service:iapHostname: photogrammetry.courageousland.com
+  photogrammetry-service:enableOperationalAlerts: "false"
   photogrammetry-service:pubsubBacklogSubscriptions: []
+  photogrammetry-service:cloudflareZoneId: 059f992d49430d5b97a4f233df45a699
+  cloudflare:apiToken:
+    secure: AAABADIWbAR+6U5k2mhfATvO32/UaQysgb8JqQkTGNlr/dgSvNocF2Tkcoq/du+VnRhecNBXViVIT7Urf6foW4gXlvcTw6I/

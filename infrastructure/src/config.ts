@@ -24,6 +24,8 @@ export interface RuntimeInfraConfig {
     apiMinScale: number;
     apiMaxScale: number;
     cloudRunPublicAccess: boolean;
+    enableIap: boolean;
+    iapHostname: string;
     enableOperationalAlerts: boolean;
     alertNotificationEmail?: string;
     pubsubBacklogSubscriptions: string[];
@@ -84,6 +86,8 @@ export function loadRuntimeInfraConfig(config: pulumi.Config): RuntimeInfraConfi
         apiMinScale: config.getNumber("apiMinScale") ?? defaultApiMinScale,
         apiMaxScale: config.getNumber("apiMaxScale") ?? defaultApiMaxScale,
         cloudRunPublicAccess: config.getBoolean("cloudRunPublicAccess") ?? true,
+        enableIap: config.getBoolean("enableIap") ?? false,
+        iapHostname: config.get("iapHostname") || "photogrammetry.courageousland.com",
         enableOperationalAlerts: config.getBoolean("enableOperationalAlerts") ?? false,
         alertNotificationEmail: config.get("alertNotificationEmail") || undefined,
         pubsubBacklogSubscriptions: config.getObject<string[]>("pubsubBacklogSubscriptions") || [],

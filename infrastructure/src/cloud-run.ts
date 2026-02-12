@@ -30,6 +30,7 @@ export interface CloudRunConfig {
     apiMinScale: number;
     apiMaxScale: number;
     cloudRunPublicAccess: boolean;
+    enableIap: boolean;
 }
 
 export interface CloudRunResources {
@@ -65,6 +66,7 @@ export function createCloudRunService(
         apiMinScale,
         apiMaxScale,
         cloudRunPublicAccess,
+        enableIap,
     } = config;
 
     const service = new gcp.cloudrun.Service(`${serviceName}-api`, {
@@ -115,7 +117,11 @@ export function createCloudRunService(
                 annotations: {
                     "autoscaling.knative.dev/minScale": String(apiMinScale),
                     "autoscaling.knative.dev/maxScale": String(apiMaxScale),
-                    "run.googleapis.com/ingress": "all",
+                    // When IAP is enabled, only allow traffic through the Load Balancer
+                    // This blocks direct access to the .run.app URL, forcing auth via IAP
+                    "run.googleapis.com/ingress": enableIap
+                        ? "internal-and-cloud-load-balancing"
+                        : "all",
                 },
             },
         },
@@ -125,8 +131,20 @@ export function createCloudRunService(
         }],
     }, { dependsOn });
 
-    if (cloudRunPublicAccess) {
-        // Allow public access (configure authentication as needed)
+    if (cloudRunPublicAccess && !enableIap) {
+        // Allow public access (only when IAP is NOT enabled)
+        // When IAP is active, the LB handles auth and Cloud Run ingress
+        // is restricted to internal-and-cloud-load-balancing
+        new gcp.cloudrun.IamMember(`${serviceName}-api-invoker`, {
+            service: service.name,
+            location: region,
+            role: "roles/run.invoker",
+            member: "allUsers",
+        });
+    } else if (enableIap) {
+        // When IAP is enabled, keep allUsers invoker but rely on ingress
+        // restriction to block direct .run.app access. The LB/IAP handles
+        // authentication before traffic reaches Cloud Run.
         new gcp.cloudrun.IamMember(`${serviceName}-api-invoker`, {
             service: service.name,
             location: region,
