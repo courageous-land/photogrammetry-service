@@ -41,7 +41,7 @@ class PubSubService:
     def _publish_sync(self, message_bytes: bytes) -> str:
         """Synchronous publish — called via asyncio.to_thread."""
         future = self.publisher.publish(self.topic_path, message_bytes)
-        return future.result()
+        return future.result(timeout=30)
 
     async def publish_event(
         self,

@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -193,13 +194,25 @@ class PhotogrammetryWorker:
 
         downloaded: List[Path] = []
         for i, blob in enumerate(blobs):
-            filename = blob.name.replace(prefix, "")
-            extension = Path(filename).suffix.lower()
+            raw_name = blob.name.replace(prefix, "")
+            # Security: extract only the basename to prevent path traversal
+            safe_name = Path(raw_name).name
+            if not safe_name:
+                logger.warning("Skipping blob with empty basename: %s", blob.name)
+                continue
 
+            extension = Path(safe_name).suffix.lower()
             if extension not in self.SUPPORTED_EXTENSIONS:
                 continue
 
-            local_path = self.images_dir / filename
+            local_path = self.images_dir / safe_name
+            # Double-check resolved path stays inside images_dir
+            try:
+                local_path.resolve().relative_to(self.images_dir.resolve())
+            except ValueError:
+                logger.warning("Skipping suspicious blob path: %s", blob.name)
+                continue
+
             blob.download_to_filename(str(local_path))
             downloaded.append(local_path)
 
@@ -248,6 +261,10 @@ class PhotogrammetryWorker:
                 return progress
         return 0
 
+    # Maximum wall-clock time for ODM (seconds). Cloud Batch also enforces
+    # its own max_run_duration, but this provides defense-in-depth.
+    MAX_PROCESS_SECONDS = int(os.environ.get("ODM_TIMEOUT_SECONDS", "7200"))
+
     def run_odm(self, project_id: str) -> None:
         """Execute OpenDroneMap processing."""
         cmd = self.build_odm_command()
@@ -262,8 +279,16 @@ class PhotogrammetryWorker:
             cwd=str(self.WORK_DIR)
         )
 
+        start_time = time.monotonic()
         last_progress = 0
         for line in process.stdout:
+            # Check wall-clock timeout on every output line
+            if time.monotonic() - start_time > self.MAX_PROCESS_SECONDS:
+                logger.error("ODM exceeded %ds timeout — killing process", self.MAX_PROCESS_SECONDS)
+                process.kill()
+                process.wait(timeout=30)
+                raise RuntimeError(f"ODM process timed out after {self.MAX_PROCESS_SECONDS}s")
+
             line = line.strip()
             if line:
                 logger.info(f"[ODM] {line}")
@@ -273,7 +298,13 @@ class PhotogrammetryWorker:
                     last_progress = new_progress
                     self.update_status(project_id, "processing", progress=new_progress)
 
-        process.wait()
+        try:
+            process.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            logger.error("ODM process.wait() timed out — killing")
+            process.kill()
+            process.wait(timeout=30)
+            raise RuntimeError("ODM process hung after output ended")
 
         if process.returncode != 0:
             raise RuntimeError(f"ODM failed with exit code {process.returncode}")

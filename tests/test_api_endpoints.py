@@ -13,8 +13,11 @@ from httpx import ASGITransport, AsyncClient
 # Helpers
 # ---------------------------------------------------------------------------
 
+FAKE_UUID = "00000000-0000-4000-a000-000000000001"
+FAKE_UUID_MISSING = "00000000-0000-4000-a000-ffffffffffff"
 
-def _make_project(project_id: str = "test-123", status: str = "created", **overrides):
+
+def _make_project(project_id: str = FAKE_UUID, status: str = "created", **overrides):
     now = datetime.now(UTC).isoformat()
     base = {
         "project_id": project_id,
@@ -136,7 +139,7 @@ class TestCreateProject:
         resp = await client.post("/projects", json={"name": "My Project"})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["project_id"] == "test-123"
+        assert data["project_id"] == FAKE_UUID
         assert data["status"] == "created"
 
     @pytest.mark.asyncio
@@ -168,16 +171,16 @@ class TestGetProjectStatus:
     async def test_not_found(self, client, mock_services):
         mock_services["storage"].get_project.return_value = None
 
-        resp = await client.get("/projects/nonexistent")
+        resp = await client.get(f"/projects/{FAKE_UUID_MISSING}")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_returns_project(self, client, mock_services):
         mock_services["storage"].get_project.return_value = _make_project()
 
-        resp = await client.get("/projects/test-123")
+        resp = await client.get(f"/projects/{FAKE_UUID}")
         assert resp.status_code == 200
-        assert resp.json()["project_id"] == "test-123"
+        assert resp.json()["project_id"] == FAKE_UUID
 
 
 class TestFinalizeUpload:
@@ -186,7 +189,7 @@ class TestFinalizeUpload:
         mock_services["storage"].get_project.return_value = _make_project()
         mock_services["storage"].get_uploaded_files.return_value = []
 
-        resp = await client.post("/projects/test-123/finalize-upload")
+        resp = await client.post(f"/projects/{FAKE_UUID}/finalize-upload")
         assert resp.status_code == 400
 
     @pytest.mark.asyncio
@@ -195,7 +198,7 @@ class TestFinalizeUpload:
         mock_services["storage"].get_uploaded_files.return_value = ["image1.jpg", "image2.jpg"]
         mock_services["storage"].update_project.return_value = _make_project(status="pending")
 
-        resp = await client.post("/projects/test-123/finalize-upload")
+        resp = await client.post(f"/projects/{FAKE_UUID}/finalize-upload")
         assert resp.status_code == 200
         assert resp.json()["files_count"] == 2
 
@@ -210,7 +213,7 @@ class TestStartProcessing:
         }
         mock_services["storage"].get_project.return_value = _make_project(status="processing")
 
-        resp = await client.post("/projects/test-123/process")
+        resp = await client.post(f"/projects/{FAKE_UUID}/process")
         assert resp.status_code == 200
         assert resp.json()["status"] == "processing"
 
@@ -221,7 +224,7 @@ class TestStartProcessing:
             "error": "Project not found",
         }
 
-        resp = await client.post("/projects/test-123/process")
+        resp = await client.post(f"/projects/{FAKE_UUID_MISSING}/process")
         assert resp.status_code == 404
 
 
@@ -230,7 +233,7 @@ class TestGetResult:
     async def test_not_found(self, client, mock_services):
         mock_services["storage"].get_project.return_value = None
 
-        resp = await client.get("/projects/test-123/result")
+        resp = await client.get(f"/projects/{FAKE_UUID_MISSING}/result")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -242,7 +245,7 @@ class TestGetResult:
         mock_services["storage"].get_project.return_value = project
         mock_services["storage"].generate_download_url.return_value = "https://signed-url"
 
-        resp = await client.get("/projects/test-123/result")
+        resp = await client.get(f"/projects/{FAKE_UUID}/result")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["outputs"]) == 1

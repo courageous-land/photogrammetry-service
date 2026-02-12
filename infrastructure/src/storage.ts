@@ -29,11 +29,15 @@ export function createStorage(
     // Determine lifecycle based on environment
     const uploadsLifecycleDays = environment === "prod" ? 30 : 7;
     
+    // Lifecycle configuration per environment
+    const outputsLifecycleDays = environment === "prod" ? 365 : 30;
+
     // Uploads bucket - for raw images
     const uploadsBucket = new gcp.storage.Bucket(`${serviceName}-uploads`, {
         name: pulumi.interpolate`${project}-${serviceName}-uploads`,
         location: region,
         uniformBucketLevelAccess: true,
+        publicAccessPrevention: "enforced",
         forceDestroy: environment !== "prod",
         lifecycleRules: [{
             action: { type: "Delete" },
@@ -61,7 +65,12 @@ export function createStorage(
         name: pulumi.interpolate`${project}-${serviceName}-outputs`,
         location: region,
         uniformBucketLevelAccess: true,
+        publicAccessPrevention: "enforced",
         forceDestroy: environment !== "prod",
+        lifecycleRules: [{
+            action: { type: "Delete" },
+            condition: { age: outputsLifecycleDays },
+        }],
         cors: [{
             origins: ["*"],
             methods: ["GET"],

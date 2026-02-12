@@ -8,6 +8,7 @@ Infrastructure parameters (machine tiers, disk sizing, zones, retries, etc.) are
 owned by Pulumi stack config and injected via environment variables.
 The only domain logic here is the selection algorithm and disk formula.
 """
+import asyncio
 import json
 import os
 from datetime import datetime
@@ -322,7 +323,7 @@ class BatchService:
             job=job
         )
 
-        result = self.client.create_job(request=request)
+        result = await asyncio.to_thread(self.client.create_job, request=request, timeout=60)
 
         return {
             "job_name": result.name,
@@ -339,7 +340,7 @@ class BatchService:
     async def get_job_status(self, job_name: str) -> dict[str, Any]:
         """Get job status."""
         request = batch_v1.GetJobRequest(name=job_name)
-        job = self.client.get_job(request=request)
+        job = await asyncio.to_thread(self.client.get_job, request=request, timeout=10)
 
         return {
             "job_name": job.name,

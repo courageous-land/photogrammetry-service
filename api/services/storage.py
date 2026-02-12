@@ -163,11 +163,11 @@ class StorageService:
             "updated_at": now,
         }
 
-        self.projects_collection.document(project_id).set(project_data)
+        self.projects_collection.document(project_id).set(project_data, timeout=10)
         return project_data
 
     def _get_project_sync(self, project_id: str) -> dict[str, Any] | None:
-        doc = self.projects_collection.document(project_id).get()
+        doc = self.projects_collection.document(project_id).get(timeout=10)
         if not doc.exists:
             return None
         return doc.to_dict()
@@ -176,14 +176,14 @@ class StorageService:
         self, project_id: str, updates: dict[str, Any]
     ) -> dict[str, Any] | None:
         doc_ref = self.projects_collection.document(project_id)
-        doc = doc_ref.get()
+        doc = doc_ref.get(timeout=10)
 
         if not doc.exists:
             return None
 
         updates["updated_at"] = datetime.now(UTC).isoformat()
-        doc_ref.update(updates)
-        return doc_ref.get().to_dict()
+        doc_ref.update(updates, timeout=10)
+        return doc_ref.get(timeout=10).to_dict()
 
     def _list_projects_sync(
         self, user_id: str | None, limit: int
@@ -196,13 +196,107 @@ class StorageService:
         query = query.order_by("created_at", direction=firestore.Query.DESCENDING)
         query = query.limit(limit)
 
-        docs = query.stream()
+        docs = query.stream(timeout=10)
         return [doc.to_dict() for doc in docs]
 
     def _get_uploaded_files_sync(self, project_id: str) -> list[str]:
         prefix = f"{project_id}/"
         blobs = self.uploads_bucket.list_blobs(prefix=prefix)
         return [blob.name.replace(prefix, "") for blob in blobs]
+
+    # ------------------------------------------------------------------
+    # Transactional helpers (prevent race conditions on shared state)
+    # ------------------------------------------------------------------
+
+    def _append_file_sync(
+        self, project_id: str, file_data: dict[str, Any]
+    ) -> bool:
+        """Atomically append a file entry to the project's files list."""
+        doc_ref = self.projects_collection.document(project_id)
+        transaction = self.firestore_client.transaction()
+
+        @firestore.transactional
+        def _txn(transaction):
+            doc = doc_ref.get(transaction=transaction)
+            if not doc.exists:
+                return False
+            project_data = doc.to_dict()
+            files = project_data.get("files", [])
+            files.append(file_data)
+            transaction.update(doc_ref, {
+                "files": files,
+                "status": ProjectStatus.UPLOADING.value,
+                "updated_at": datetime.now(UTC).isoformat(),
+            })
+            return True
+
+        return _txn(transaction)
+
+    def _confirm_file_sync(self, project_id: str, file_id: str) -> bool:
+        """Atomically mark a file as uploaded in the project's files list."""
+        doc_ref = self.projects_collection.document(project_id)
+        transaction = self.firestore_client.transaction()
+
+        @firestore.transactional
+        def _txn(transaction):
+            doc = doc_ref.get(transaction=transaction)
+            if not doc.exists:
+                return False
+            project_data = doc.to_dict()
+            files = project_data.get("files", [])
+            found = False
+            for f in files:
+                if f["file_id"] == file_id:
+                    f["status"] = "uploaded"
+                    f["uploaded_at"] = datetime.now(UTC).isoformat()
+                    found = True
+                    break
+            if found:
+                transaction.update(doc_ref, {
+                    "files": files,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                })
+            return found
+
+        return _txn(transaction)
+
+    def _transition_status_sync(
+        self,
+        project_id: str,
+        allowed_from: list[str],
+        new_status: str,
+        extra_updates: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        Atomically transition project status.
+
+        Returns:
+            Updated project dict on success.
+            None if project not found.
+            Dict with ``__rejected`` key if current status is not in *allowed_from*.
+        """
+        doc_ref = self.projects_collection.document(project_id)
+        transaction = self.firestore_client.transaction()
+
+        @firestore.transactional
+        def _txn(transaction):
+            doc = doc_ref.get(transaction=transaction)
+            if not doc.exists:
+                return None
+            data = doc.to_dict()
+            current = data.get("status")
+            if current not in allowed_from:
+                return {"__rejected": True, "current_status": current}
+            updates = {
+                "status": new_status,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+            if extra_updates:
+                updates.update(extra_updates)
+            transaction.update(doc_ref, updates)
+            return {**data, **updates}
+
+        return _txn(transaction)
 
     # ------------------------------------------------------------------
     # Public async API
@@ -240,6 +334,22 @@ class StorageService:
     ) -> list[dict[str, Any]]:
         """List projects from Firestore."""
         return await asyncio.to_thread(self._list_projects_sync, user_id, limit)
+
+    async def transition_status(
+        self,
+        project_id: str,
+        allowed_from: list[str],
+        new_status: str,
+        extra_updates: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Atomically transition project status if current status is in *allowed_from*."""
+        return await asyncio.to_thread(
+            self._transition_status_sync,
+            project_id,
+            allowed_from,
+            new_status,
+            extra_updates,
+        )
 
     async def generate_upload_url(
         self,
@@ -283,7 +393,7 @@ class StorageService:
                 return blob.create_resumable_upload_session(
                     content_type=content_type,
                     size=file_size,
-                    origin=origin or "*",
+                    origin=origin,
                     client=self.storage_client,
                 )
 
@@ -304,23 +414,18 @@ class StorageService:
             upload_url = await asyncio.to_thread(_sign_url)
             upload_type = "simple"
 
-        # Register pending file
-        files = project.get("files", [])
-        files.append({
+        # Register pending file atomically (prevents concurrent append races)
+        file_data = {
             "file_id": file_id,
-            "filename": filename,
+            "filename": clean_filename,
             "safe_filename": safe_filename,
             "blob_path": blob_path,
             "size": file_size,
             "content_type": content_type,
             "status": "pending",
             "uploaded_at": None,
-        })
-
-        await self.update_project(project_id, {
-            "files": files,
-            "status": ProjectStatus.UPLOADING.value,
-        })
+        }
+        await asyncio.to_thread(self._append_file_sync, project_id, file_data)
 
         return {
             "upload_url": upload_url,
@@ -331,22 +436,30 @@ class StorageService:
         }
 
     async def confirm_upload(self, project_id: str, file_id: str) -> bool:
-        """Confirm that upload was completed by checking the blob."""
+        """Confirm that upload was completed by checking the blob in GCS,
+        then atomically update the file status in Firestore."""
         project = await self.get_project(project_id)
         if not project:
             return False
 
-        files = project.get("files", [])
-        for file in files:
-            if file["file_id"] == file_id:
-                blob = self.uploads_bucket.blob(file["blob_path"])
-                exists = await asyncio.to_thread(blob.exists)
-                if exists:
-                    file["status"] = "uploaded"
-                    file["uploaded_at"] = datetime.now(UTC).isoformat()
+        # Find the file's blob_path
+        blob_path = None
+        for f in project.get("files", []):
+            if f["file_id"] == file_id:
+                blob_path = f.get("blob_path")
                 break
 
-        await self.update_project(project_id, {"files": files})
+        if not blob_path:
+            return False
+
+        # Verify blob exists in Cloud Storage
+        blob = self.uploads_bucket.blob(blob_path)
+        exists = await asyncio.to_thread(blob.exists)
+        if not exists:
+            return False
+
+        # Atomically update file status in Firestore
+        await asyncio.to_thread(self._confirm_file_sync, project_id, file_id)
         return True
 
     async def generate_download_url(
@@ -357,7 +470,9 @@ class StorageService:
     ) -> str | None:
         """Generate signed URL for downloading a file."""
         bucket = self.outputs_bucket if bucket_type == "outputs" else self.uploads_bucket
-        blob_path = f"{project_id}/{filename}"
+        # Sanitize filename to prevent path traversal (e.g. "../other-project/secret")
+        safe_name = sanitize_filename(filename)
+        blob_path = f"{project_id}/{safe_name}"
         blob = bucket.blob(blob_path)
 
         exists = await asyncio.to_thread(blob.exists)

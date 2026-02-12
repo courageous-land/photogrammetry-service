@@ -115,6 +115,7 @@ export function createCloudRunService(
                 annotations: {
                     "autoscaling.knative.dev/minScale": String(apiMinScale),
                     "autoscaling.knative.dev/maxScale": String(apiMaxScale),
+                    "run.googleapis.com/ingress": "all",
                 },
             },
         },

@@ -7,7 +7,7 @@ Handles project creation, file uploads, processing, and results.
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Path, Query, Request
 
 from models import (
     CreateProjectRequest,
@@ -26,6 +26,13 @@ from services import batch_service, processor_service, pubsub_service, storage_s
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
+
+# Reusable Path for UUID-validated project IDs
+_PROJECT_ID = Path(
+    ...,
+    pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    description="Project UUID",
+)
 
 
 @router.post(
@@ -89,7 +96,7 @@ async def list_projects(
     summary="Get project status",
     description="Returns the current status of a project. Use for polling during processing. Automatically checks Cloud Batch job status if project is processing."
 )
-async def get_project_status(project_id: str):
+async def get_project_status(project_id: str = _PROJECT_ID):
     """Get project status. If processing, check Cloud Batch job status."""
     project = await storage_service.get_project(project_id)
 
@@ -135,9 +142,8 @@ async def get_project_status(project_id: str):
                                     "error_message": "Job queued for too long. Check Cloud Batch permissions and quotas."
                                 })
                                 project = await storage_service.get_project(project_id)
-                    except Exception:
-                        # If date parsing fails, skip timeout check
-                        pass
+                    except (ValueError, TypeError, AttributeError) as parse_err:
+                        logger.debug("Skipping queue timeout check — date parse error: %s", parse_err)
 
             except Exception as e:
                 # If we can't check job status, log but don't fail the request
@@ -172,14 +178,17 @@ async def get_project_status(project_id: str):
     The client uploads directly to Cloud Storage, bypassing the API.
     """
 )
-async def get_upload_url(project_id: str, body: UploadUrlRequest, request: Request):
+async def get_upload_url(project_id: str = _PROJECT_ID, *, body: UploadUrlRequest, request: Request):
     """Generate URL for file upload."""
     use_resumable = body.resumable and body.file_size is not None
 
-    # Extract origin for CORS
+    # Extract and validate origin against CORS allowlist before passing to GCS
     origin = request.headers.get("origin") or request.headers.get("referer")
     if origin:
         origin = origin.split("?")[0].rstrip("/")
+        app_origins = request.app.state.allowed_origins
+        if "*" not in app_origins and origin not in app_origins:
+            origin = None  # untrusted origin — GCS won't set CORS headers
 
     result = await storage_service.generate_upload_url(
         project_id=project_id,
@@ -208,7 +217,7 @@ async def get_upload_url(project_id: str, body: UploadUrlRequest, request: Reque
     summary="Finalize upload",
     description="Finalizes the upload process and updates status to PENDING. Call when all uploads are complete."
 )
-async def finalize_upload(project_id: str):
+async def finalize_upload(project_id: str = _PROJECT_ID):
     """Finalize upload and update status to PENDING."""
     project = await storage_service.get_project(project_id)
 
@@ -252,7 +261,7 @@ async def finalize_upload(project_id: str):
     Processing runs asynchronously on Cloud Batch.
     """
 )
-async def start_processing(project_id: str, request: ProcessRequest = None):
+async def start_processing(project_id: str = _PROJECT_ID, *, request: ProcessRequest = None):
     """Start photogrammetry processing."""
     if request is None:
         request = ProcessRequest()
@@ -263,9 +272,11 @@ async def start_processing(project_id: str, request: ProcessRequest = None):
     )
 
     if not result["success"]:
-        if "not found" in result.get("error", "").lower():
-            raise HTTPException(status_code=404, detail=result["error"])
-        raise HTTPException(status_code=400, detail=result["error"])
+        error_msg = result.get("error", "Processing failed")
+        if "not found" in error_msg.lower():
+            raise HTTPException(status_code=404, detail=error_msg)
+        # Return only safe, known error messages (no internal details)
+        raise HTTPException(status_code=400, detail=error_msg)
 
     project = await storage_service.get_project(project_id)
 
@@ -287,7 +298,7 @@ async def start_processing(project_id: str, request: ProcessRequest = None):
     summary="Get processing results",
     description="Returns processing results. Available only when status is COMPLETED."
 )
-async def get_project_result(project_id: str):
+async def get_project_result(project_id: str = _PROJECT_ID):
     """Get project processing results."""
     project = await storage_service.get_project(project_id)
 

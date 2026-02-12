@@ -15,8 +15,8 @@ class ProjectStatus(str, Enum):
 
 class CreateProjectRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    description: str | None = None
-    user_id: str | None = None
+    description: str | None = Field(None, max_length=2048)
+    user_id: str | None = Field(None, max_length=128)
 
 
 class CreateProjectResponse(BaseModel):
@@ -26,10 +26,22 @@ class CreateProjectResponse(BaseModel):
     created_at: datetime
 
 
+_ALLOWED_CONTENT_TYPES = frozenset({
+    "image/jpeg", "image/png", "image/tiff", "image/gif", "image/webp",
+    "application/octet-stream",
+})
+
+
 class UploadUrlRequest(BaseModel):
-    filename: str = Field(..., min_length=1)
-    file_size: int | None = Field(None, description="Tamanho do arquivo em bytes (necessário para resumable)")
-    content_type: str | None = Field("image/jpeg", description="Tipo MIME do arquivo")
+    filename: str = Field(..., min_length=1, max_length=1024)
+    file_size: int | None = Field(
+        None, ge=1, le=5_368_709_120,
+        description="Tamanho do arquivo em bytes (1 B – 5 GB, necessário para resumable)",
+    )
+    content_type: str | None = Field(
+        "image/jpeg", max_length=128,
+        description="Tipo MIME do arquivo",
+    )
     resumable: bool | None = Field(True, description="Usar upload resumable (recomendado para arquivos > 5MB)")
 
 

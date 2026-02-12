@@ -84,7 +84,12 @@ const pubsubStatusTopic = new gcp.pubsub.Topic(`${serviceName}-status`, {
 
 // Service Accounts
 const serviceAccounts = createServiceAccounts({ project, serviceName });
-configureIamPermissions({ project, serviceName }, serviceAccounts);
+configureIamPermissions({
+    project,
+    serviceName,
+    uploadsBucketName: storage.uploadsBucket.name,
+    outputsBucketName: storage.outputsBucket.name,
+}, serviceAccounts);
 
 // Cloud Run
 const cloudRun = createCloudRunService(

@@ -50,7 +50,23 @@ async def lifespan(app: FastAPI):
     logger.info("Region: %s", os.environ.get("GCP_REGION", "not set"))
     logger.info("=" * 60)
     yield
-    # Shutdown
+    # Shutdown — release GCP client connections
+    from services import batch_service, pubsub_service, storage_service as _ss
+
+    try:
+        _ss.storage_client.close()
+        _ss.firestore_client.close()
+    except Exception as exc:
+        logger.warning("Error closing storage/firestore clients: %s", exc)
+    try:
+        batch_service.client.transport.close()
+    except Exception as exc:
+        logger.warning("Error closing Batch client: %s", exc)
+    try:
+        pubsub_service.publisher.transport.close()
+    except Exception as exc:
+        logger.warning("Error closing PubSub client: %s", exc)
+
     logger.info("Photogrammetry Service API - Shutting down")
 
 
@@ -99,12 +115,15 @@ digital surface models (DSM), digital terrain models (DTM), and point clouds.
 allowed_origins = load_allowed_origins()
 allow_credentials = "*" not in allowed_origins
 
+# Store on app.state so routers can validate origins for GCS CORS
+app.state.allowed_origins = allowed_origins
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 # Routers
