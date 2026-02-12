@@ -46,4 +46,4 @@ config:
   photogrammetry-service:pubsubBacklogSubscriptions: []
   photogrammetry-service:cloudflareZoneId: 059f992d49430d5b97a4f233df45a699
   cloudflare:apiToken:
-    secure: AAABADIWbAR+6U5k2mhfATvO32/UaQysgb8JqQkTGNlr/dgSvNocF2Tkcoq/du+VnRhecNBXViVIT7Urf6foW4gXlvcTw6I/
+    secure: AAABAJwGsczzHqdDIhOKiEUorhQ566QDybpwdPjxOUKUcBSelyQ1JG7EuERwQLUZ/K1cb/pYEtNEfpIveterdhpi3GKtpz0I

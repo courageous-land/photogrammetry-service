@@ -1,15 +1,15 @@
 config:
   gcp:project: cl-operational
   gcp:region: southamerica-east1
-  photogrammetry-service:environment: prod
+  photogrammetry-service:environment: dev
   photogrammetry-service:apiImageTag: latest
   photogrammetry-service:workerImageTag: latest
-  photogrammetry-service:allowedOrigins: "https://www.courageousland.com"
+  photogrammetry-service:allowedOrigins: "*"
   photogrammetry-service:batchAllowedZones:
     - southamerica-east1-a
     - southamerica-east1-b
   photogrammetry-service:batchMaxRunDuration: 43200s
-  photogrammetry-service:batchMaxRetryCount: 2
+  photogrammetry-service:batchMaxRetryCount: "2"
   photogrammetry-service:batchProvisioningModel: STANDARD
   photogrammetry-service:batchMachineTiers:
     - maxImages: 200
@@ -32,16 +32,19 @@ config:
       machineType: n2-highmem-32
       cpuMilli: 32000
       memoryMib: 262144
-  photogrammetry-service:batchMinBootDiskMb: 51200
-  photogrammetry-service:batchDiskSafetyMargin: 1.15
-  photogrammetry-service:batchAvgImageSizeMb: 9
+  photogrammetry-service:batchMinBootDiskMb: "51200"
+  photogrammetry-service:batchDiskSafetyMargin: "1.15"
+  photogrammetry-service:batchAvgImageSizeMb: "9"
   photogrammetry-service:batchWorkerCommand: "python3,/worker/main.py"
   photogrammetry-service:batchLogDestination: CLOUD_LOGGING
-  photogrammetry-service:apiMinScale: 1
-  photogrammetry-service:apiMaxScale: 20
-  photogrammetry-service:cloudRunPublicAccess: false
-  photogrammetry-service:enableIap: true
+  photogrammetry-service:apiMinScale: "0"
+  photogrammetry-service:apiMaxScale: "10"
+  photogrammetry-service:cloudRunPublicAccess: "false"
+  photogrammetry-service:enableIap: "true"
   photogrammetry-service:iapHostname: photogrammetry.courageousland.com
-  photogrammetry-service:enableOperationalAlerts: true
+  photogrammetry-service:enableOperationalAlerts: "false"
   photogrammetry-service:alertNotificationEmail: ops@courageousland.com
   photogrammetry-service:pubsubBacklogSubscriptions: []
+  cloudflare:apiToken:
+    secure: AAABACM3W7m4YaGV1rTMS5mYQIlERfQjELijuoeTlU5I/uoubAPvD2qfU59kQqBaPGEbh+4OcinquXfpk722OnMOt1a4YRP1
+  photogrammetry-service:cloudflareZoneId: 059f992d49430d5b97a4f233df45a699
