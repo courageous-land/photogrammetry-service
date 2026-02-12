@@ -153,10 +153,12 @@ export function createCloudRunService(
         }],
     }, { dependsOn });
 
-    if (cloudRunPublicAccess && !enableIap) {
-        // Allow public access (only when IAP is NOT enabled)
-        // When IAP is active, the LB handles auth and Cloud Run ingress
-        // is restricted to internal-and-cloud-load-balancing
+    if (cloudRunPublicAccess || enableIap) {
+        // allUsers invoker is needed in both cases:
+        // - Public access: allows anyone to call the API directly
+        // - IAP enabled: allows the Load Balancer to forward traffic to Cloud Run.
+        //   Security is enforced by IAP (auth) + ingress restriction
+        //   (internal-and-cloud-load-balancing blocks direct .run.app access).
         new gcp.cloudrun.IamMember(`${serviceName}-api-invoker`, {
             service: service.name,
             location: region,

@@ -215,7 +215,10 @@ export function createIapBackend(
         project,
         webBackendService: backendService.name,
         role: "roles/iap.httpsResourceAccessor",
-        members: ["domain:courageousland.com"],
+        members: [
+            "domain:courageousland.com",
+            "user:jeferson@courageousland.com",
+        ],
     });
 
     return {
