@@ -9,9 +9,9 @@ Architecture:
 - Firestore: Project metadata and status
 - Cloud Batch: Processing jobs with OpenDroneMap
 """
+import asyncio
 import logging
 import os
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -53,7 +53,8 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     yield
     # Shutdown — release GCP client connections
-    from services import batch_service, pubsub_service, storage_service as _ss
+    from services import batch_service, pubsub_service
+    from services import storage_service as _ss
 
     try:
         _ss.storage_client.close()
