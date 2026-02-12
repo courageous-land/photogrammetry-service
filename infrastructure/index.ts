@@ -44,6 +44,7 @@ const enabledApis = [
     "pubsub.googleapis.com",
     "monitoring.googleapis.com",
     "iap.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
 ].map((api) =>
     new gcp.projects.Service(`enable-${api.split(".")[0]}`, {
         project,
