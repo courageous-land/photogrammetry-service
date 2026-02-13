@@ -27,10 +27,11 @@ class PhotogrammetryApp {
     }
 
     async api(method, path, body = null) {
+        const isIap = this.apiUrl.includes('courageousland.com');
         const opts = {
             method,
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include'
+            ...(isIap && { credentials: 'include' })
         };
         if (body) opts.body = JSON.stringify(body);
         const res = await fetch(`${this.apiUrl}${path}`, opts);
