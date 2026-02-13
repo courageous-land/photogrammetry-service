@@ -55,32 +55,11 @@ export function createIapBackend(
         environment,
     } = config;
 
-    const cloudArmorPolicy = new gcp.compute.SecurityPolicy(`${serviceName}-armor`, {
-        project,
-        name: `${serviceName}-armor`,
-        description: `Cloud Armor policy for ${serviceName} IAP backend`,
-        rules: [
-            {
-                priority: 1000,
-                action: "deny(403)",
-                description: "Block known malicious patterns (OWASP CRS stable)",
-                match: {
-                    expr: {
-                        expression: "evaluatePreconfiguredWaf('sqli-stable') || evaluatePreconfiguredWaf('xss-stable')",
-                    },
-                },
-            },
-            {
-                priority: 2147483647,
-                action: "allow",
-                description: "Default allow",
-                match: {
-                    versionedExpr: "SRC_IPS_V1",
-                    config: { srcIpRanges: ["*"] },
-                },
-            },
-        ],
-    }, { dependsOn });
+    // Note: Cloud Armor WAF is intentionally NOT used here.
+    // WAF rules (sqli-stable, xss-stable) cause false positives on IAP
+    // authentication tokens/cookies, blocking legitimate access.
+    // IAP itself provides authentication; Cloud Run ingress restriction
+    // provides network-level security.
 
     // ---------------------------------------------------------------
     // 1. Global static IP
@@ -122,9 +101,8 @@ export function createIapBackend(
             enable: true,
             sampleRate: environment === "prod" ? 0.1 : 1.0,
         },
-        securityPolicy: cloudArmorPolicy.id,
         description: `Backend for ${serviceName} API (Cloud Run via Serverless NEG, IAP enabled)`,
-    }, { dependsOn: [neg, cloudArmorPolicy] });
+    }, { dependsOn: [neg] });
 
     // ---------------------------------------------------------------
     // 4. URL Map (with explicit host-based routing)
