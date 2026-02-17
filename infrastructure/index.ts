@@ -18,7 +18,6 @@ import { createStorage } from "./src/storage";
 import { createServiceAccounts, configureIamPermissions } from "./src/iam";
 import { createCloudRunService } from "./src/cloud-run";
 import { createIapBackend } from "./src/iap";
-import { createCloudflareDnsRecord } from "./src/cloudflare-dns";
 import { loadRuntimeInfraConfig } from "./src/config";
 import { createOperationalMonitoring } from "./src/monitoring";
 
@@ -151,11 +150,6 @@ if (runtimeInfra.enableIap) {
         enabledApis
     );
 
-    // Create Cloudflare DNS record pointing to the LB IP
-    createCloudflareDnsRecord({
-        hostname: runtimeInfra.iapHostname,
-        loadBalancerIp: iapBackend.ipAddress,
-    });
 }
 
 createOperationalMonitoring({

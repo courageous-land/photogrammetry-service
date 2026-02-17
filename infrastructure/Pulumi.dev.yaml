@@ -39,11 +39,7 @@ config:
   photogrammetry-service:batchLogDestination: CLOUD_LOGGING
   photogrammetry-service:apiMinScale: "0"
   photogrammetry-service:apiMaxScale: "10"
-  photogrammetry-service:cloudRunPublicAccess: "false"
-  photogrammetry-service:enableIap: "true"
-  photogrammetry-service:iapHostname: photogrammetry.courageousland.com
+  photogrammetry-service:cloudRunPublicAccess: "true"
+  photogrammetry-service:enableIap: "false"
   photogrammetry-service:enableOperationalAlerts: "false"
   photogrammetry-service:pubsubBacklogSubscriptions: []
-  photogrammetry-service:cloudflareZoneId: 059f992d49430d5b97a4f233df45a699
-  cloudflare:apiToken:
-    secure: AAABAJwGsczzHqdDIhOKiEUorhQ566QDybpwdPjxOUKUcBSelyQ1JG7EuERwQLUZ/K1cb/pYEtNEfpIveterdhpi3GKtpz0I
