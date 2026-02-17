@@ -117,7 +117,7 @@ export function createIapBackend(
             mainPageSuffix: "index.html",
             notFoundPage: "index.html",
         },
-        forceDestroy: true,
+        forceDestroy: environment !== "prod",
     });
 
     new gcp.storage.BucketIAMMember(`${serviceName}-frontend-public`, {

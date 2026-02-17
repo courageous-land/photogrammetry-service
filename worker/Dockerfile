@@ -5,11 +5,11 @@ FROM opendronemap/odm:3.5.3
 
 WORKDIR /worker
 
-# Install Python dependencies
+# Install Python dependencies (pinned versions for supply chain safety)
 RUN pip install --no-cache-dir \
-    google-cloud-storage \
-    google-cloud-firestore \
-    google-cloud-pubsub
+    google-cloud-storage==3.9.0 \
+    google-cloud-firestore==2.23.0 \
+    google-cloud-pubsub==2.35.0
 
 # Copy worker code
 COPY main.py .

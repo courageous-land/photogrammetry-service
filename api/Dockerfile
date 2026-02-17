@@ -7,14 +7,13 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Instala dependências do sistema (necessárias para grpcio)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Instala dependências Python
+# Instala dependências do sistema (gcc necessário para compilar grpcio),
+# instala pacotes Python e remove gcc para reduzir superfície de ataque
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends gcc \
+    && pip install --no-cache-dir -r requirements.txt \
+    && apt-get purge -y --auto-remove gcc \
+    && rm -rf /var/lib/apt/lists/*
 
 # Cria usuário não-root
 RUN useradd -m -u 1000 appuser
