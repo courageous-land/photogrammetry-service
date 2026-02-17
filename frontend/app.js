@@ -27,19 +27,33 @@ class PhotogrammetryApp {
     }
 
     async api(method, path, body = null) {
-        const isIap = this.apiUrl.includes('courageousland.com');
+        const isSameOrigin = !this.apiUrl || this.apiUrl.includes('courageousland.com');
         const opts = {
             method,
             headers: { 'Content-Type': 'application/json' },
-            ...(isIap && { credentials: 'include' })
+            ...(isSameOrigin && { credentials: 'include' })
         };
         if (body) opts.body = JSON.stringify(body);
-        const res = await fetch(`${this.apiUrl}${path}`, opts);
-        if (res.status === 401 || res.status === 403) {
-            throw new Error('Sessao expirada ou sem permissao. Faca login novamente.');
+        try {
+            const res = await fetch(`${this.apiUrl}${path}`, opts);
+            if (res.status === 401 || res.status === 403) {
+                this.redirectToAuth();
+                return null;
+            }
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Erro');
+            return res.json();
+        } catch (err) {
+            if (isSameOrigin && err instanceof TypeError) {
+                this.redirectToAuth();
+                return null;
+            }
+            throw err;
         }
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Erro');
-        return res.json();
+    }
+
+    redirectToAuth() {
+        const currentPath = window.location.pathname;
+        window.location.href = `/health?then=${encodeURIComponent(currentPath)}`;
     }
 
     async loadProjects() {

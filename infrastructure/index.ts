@@ -192,6 +192,7 @@ export const outputs = {
     iapHostname: runtimeInfra.enableIap ? runtimeInfra.iapHostname : undefined,
     iapBackendServiceName: iapBackend?.backendServiceName,
     iapLoadBalancerIp: iapBackend?.ipAddress,
+    frontendBucketName: iapBackend?.frontendBucketName,
 
     // Configuration
     project,

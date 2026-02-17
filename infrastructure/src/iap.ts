@@ -40,6 +40,7 @@ export interface IapBackendResources {
     neg: gcp.compute.RegionNetworkEndpointGroup;
     globalIp: gcp.compute.GlobalAddress;
     ipAddress: pulumi.Output<string>;
+    frontendBucketName: pulumi.Output<string>;
 }
 
 export function createIapBackend(
@@ -105,7 +106,38 @@ export function createIapBackend(
     }, { dependsOn: [neg] });
 
     // ---------------------------------------------------------------
-    // 4. URL Map (with explicit host-based routing)
+    // 4. Frontend static files bucket (served via LB, no IAP needed for static assets)
+    // ---------------------------------------------------------------
+    const frontendBucket = new gcp.storage.Bucket(`${serviceName}-frontend`, {
+        project,
+        name: `${project}-${serviceName}-frontend`,
+        location: region,
+        uniformBucketLevelAccess: true,
+        website: {
+            mainPageSuffix: "index.html",
+            notFoundPage: "index.html",
+        },
+        forceDestroy: true,
+    });
+
+    new gcp.storage.BucketIAMMember(`${serviceName}-frontend-public`, {
+        bucket: frontendBucket.name,
+        role: "roles/storage.objectViewer",
+        member: "allUsers",
+    });
+
+    const frontendBackendBucket = new gcp.compute.BackendBucket(`${serviceName}-frontend-backend`, {
+        project,
+        name: `${serviceName}-frontend-backend`,
+        bucketName: frontendBucket.name,
+        enableCdn: true,
+        description: `Frontend static files for ${serviceName}`,
+    });
+
+    // ---------------------------------------------------------------
+    // 5. URL Map (host-based routing + path rules)
+    //    /ui/*  -> GCS bucket (frontend static files)
+    //    /*     -> Cloud Run (API, IAP protected)
     // ---------------------------------------------------------------
     const urlMap = new gcp.compute.URLMap(`${serviceName}-url-map`, {
         project,
@@ -118,12 +150,16 @@ export function createIapBackend(
         pathMatchers: [{
             name: "pm-photogrammetry",
             defaultService: backendService.id,
+            pathRules: [{
+                paths: ["/ui", "/ui/*"],
+                service: frontendBackendBucket.id,
+            }],
         }],
-        description: `URL map for ${serviceName} (IAP protected)`,
+        description: `URL map for ${serviceName} (API + frontend)`,
     });
 
     // ---------------------------------------------------------------
-    // 5. Google-managed SSL certificate
+    // 6. Google-managed SSL certificate
     // ---------------------------------------------------------------
     const sslCert = new gcp.compute.ManagedSslCertificate(`${serviceName}-ssl-cert`, {
         project,
@@ -134,7 +170,7 @@ export function createIapBackend(
     });
 
     // ---------------------------------------------------------------
-    // 6. HTTPS Target Proxy
+    // 7. HTTPS Target Proxy
     // ---------------------------------------------------------------
     const httpsProxy = new gcp.compute.TargetHttpsProxy(`${serviceName}-https-proxy`, {
         project,
@@ -144,7 +180,7 @@ export function createIapBackend(
     });
 
     // ---------------------------------------------------------------
-    // 7. HTTPS Forwarding Rule (port 443)
+    // 8. HTTPS Forwarding Rule (port 443)
     // ---------------------------------------------------------------
     new gcp.compute.GlobalForwardingRule(`${serviceName}-https-forwarding`, {
         project,
@@ -157,7 +193,7 @@ export function createIapBackend(
     });
 
     // ---------------------------------------------------------------
-    // 8. HTTP -> HTTPS redirect
+    // 9. HTTP -> HTTPS redirect
     // ---------------------------------------------------------------
     const redirectUrlMap = new gcp.compute.URLMap(`${serviceName}-http-redirect`, {
         project,
@@ -187,7 +223,7 @@ export function createIapBackend(
     });
 
     // ---------------------------------------------------------------
-    // 9. IAP IAM - Grant access to all @courageousland.com users
+    // 10. IAP IAM - Grant access to all @courageousland.com users
     // ---------------------------------------------------------------
     new gcp.iap.WebBackendServiceIamBinding(`${serviceName}-iap-domain-access`, {
         project,
@@ -205,5 +241,6 @@ export function createIapBackend(
         neg,
         globalIp,
         ipAddress: globalIp.address,
+        frontendBucketName: frontendBucket.name,
     };
 }

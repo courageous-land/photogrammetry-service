@@ -76,6 +76,15 @@ export function createCloudRunService(
     const service = new gcp.cloudrun.Service(`${serviceName}-api`, {
         name: `${serviceName}-api`,
         location: region,
+        // Service-level metadata: ingress annotation MUST be here (not in template)
+        // to actually restrict direct .run.app access
+        metadata: {
+            annotations: {
+                "run.googleapis.com/ingress": enableIap
+                    ? "internal-and-cloud-load-balancing"
+                    : "all",
+            },
+        },
         template: {
             spec: {
                 serviceAccountName: apiServiceAccountEmail,
@@ -139,11 +148,6 @@ export function createCloudRunService(
                 annotations: {
                     "autoscaling.knative.dev/minScale": String(apiMinScale),
                     "autoscaling.knative.dev/maxScale": String(apiMaxScale),
-                    // When IAP is enabled, only allow traffic through the Load Balancer
-                    // This blocks direct access to the .run.app URL, forcing auth via IAP
-                    "run.googleapis.com/ingress": enableIap
-                        ? "internal-and-cloud-load-balancing"
-                        : "all",
                 },
             },
         },
